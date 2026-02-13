@@ -1,0 +1,229 @@
+// ==================== 色彩系统（暗色 + 绿色强调） ====================
+// 主色调 - 绿色
+$primary-color: #4CAF50;
+$primary-light: #66BB6A;
+$primary-dark: #388E3C;
+$primary-gradient: linear-gradient(135deg, #4CAF50, #81C784);
+
+// 背景色
+$bg-dark: #0a0a0a;
+$bg-sidebar: #111111;
+$bg-card: #1a1a1a;
+$bg-card-hover: #222222;
+$bg-surface: #141414;
+$bg-input: #1e1e1e;
+
+// 文字色
+$text-primary: #eaeaea;
+$text-secondary: #999999;
+$text-muted: #666666;
+
+// 强调色
+$accent-green: #4CAF50;
+$accent-lime: #8BC34A;
+$accent-cyan: #00BCD4;
+$accent-yellow: #FFC107;
+$accent-red: #F44336;
+
+// 边框
+$border-subtle: rgba(255, 255, 255, 0.06);
+$border-light: rgba(255, 255, 255, 0.12);
+
+// 基础样式
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  font-family: 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: $bg-dark;
+  color: $text-primary;
+  overflow-x: hidden;
+}
+
+#app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+// 自定义滚动条
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  &:hover {
+    background: rgba(255, 255, 255, 0.25);
+  }
+}
+
+// ==================== 通用工具类 ====================
+.page-container {
+  flex: 1;
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.card {
+  background: $bg-card;
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid $border-subtle;
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: $bg-card-hover;
+    border-color: rgba($primary-color, 0.3);
+  }
+}
+
+.gradient-text {
+  background: $primary-gradient;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.btn-primary {
+  background: $primary-gradient;
+  border: none;
+  color: white;
+  padding: 12px 32px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba($primary-color, 0.35);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid $border-light;
+  color: $text-primary;
+  padding: 12px 32px;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba($primary-color, 0.4);
+  }
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid $border-light;
+  color: $text-secondary;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+
+  &:hover {
+    color: $primary-color;
+    border-color: $primary-color;
+  }
+}
+
+// ==================== 动画 ====================
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: all 0.4s ease;
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+// ==================== Element Plus 暗色覆盖 ====================
+.el-button--primary {
+  background: $primary-gradient !important;
+  border: none !important;
+}
+
+.el-input__wrapper {
+  background-color: $bg-input !important;
+  border: 1px solid $border-light !important;
+  box-shadow: none !important;
+
+  .el-input__inner {
+    color: $text-primary !important;
+  }
+}
+
+.el-textarea__inner {
+  background-color: $bg-input !important;
+  border: 1px solid $border-light !important;
+  color: $text-primary !important;
+  box-shadow: none !important;
+}
+
+.el-select__wrapper {
+  background-color: $bg-input !important;
+  border: 1px solid $border-light !important;
+  box-shadow: none !important;
+}
+
+.el-dialog {
+  background-color: $bg-card !important;
+  border-radius: 12px !important;
+}
+
+.el-message-box {
+  background-color: $bg-card !important;
+}
+
+.el-slider__runway {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.el-slider__bar {
+  background: $primary-gradient !important;
+}
+
+.el-slider__button {
+  border-color: $primary-color !important;
+}
