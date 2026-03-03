@@ -12,7 +12,27 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted, onBeforeUnmount } from 'vue'
 import WorkflowSidebar from '@/components/common/WorkflowSidebar.vue'
+import { useProjectStore } from '@/stores/project'
+
+const projectStore = useProjectStore()
+
+function handleBeforeUnload(event: BeforeUnloadEvent) {
+  if (!projectStore.currentProject) return
+  // Best-effort save before leaving the page
+  void projectStore.saveCurrentProject()
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+})
 </script>
 
 <style scoped lang="scss">

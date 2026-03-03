@@ -62,6 +62,19 @@
           </el-tag>
         </div>
         <p class="video-desc">{{ scene.description || '暂无描述' }}</p>
+        <div
+          v-if="scene.videoUrl && videoValidity[scene.id] === 'checking'"
+          class="video-url-checking"
+        >
+          正在校验历史视频可用性...
+        </div>
+        <div
+          v-else-if="scene.videoUrl && videoValidity[scene.id] === 'invalid'"
+          class="video-url-warning"
+        >
+          <span>{{ videoValidationMsg[scene.id] || '上次生成的视频链接已失效' }}</span>
+          <button class="btn-ghost btn-xs" @click="regenerateInvalidVideo(scene.id)">一键重生成</button>
+        </div>
         <div class="video-actions">
           <button 
             class="btn-ghost btn-sm" 
@@ -92,15 +105,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElNotification, ElIcon } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { aiService } from '@/services/ai'
+import { assetService } from '@/services'
+import { useProjectStore } from '@/stores/project'
 import type { Scene, VideoGenStatus } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
+const projectStore = useProjectStore()
 
 const selectedModel = ref('doubao-seedance-1-5-pro')
 const resolution = ref<'480P' | '720P' | '1080P'>('720P')
@@ -108,26 +124,23 @@ const aspectRatio = ref<'1:1' | '16:9' | '9:16'>('9:16')
 const isGenerating = ref(false)
 const isGeneratingSingle = ref<Record<string, boolean>>({})
 const sceneProgress = ref<Record<string, number>>({})
+const videoValidity = ref<Record<string, 'unknown' | 'checking' | 'valid' | 'invalid'>>({})
+const videoValidationMsg = ref<Record<string, string>>({})
 
-// TODO: 从 Pinia store 获取分镜列表
-const scenes = ref<Scene[]>([
-  {
-    id: '1',
-    order: 1,
-    description: '一只橘色的猫咪坐在樱花树下，粉色的花瓣飘落，猫咪看着远处飞舞的蝴蝶',
-    imageUrl: 'https://atlas-media.oss-us-west-1.aliyuncs.com/images/cbb32f59-ecc4-46ad-b490-e529fdeee325.jpg',
-    videoUrl: '',
-    thumbnailUrl: '',
-    duration: 5,
-    transition: 'fade',
-    roleIds: [],
-    dialogue: null,
-    narration: '',
-    cameraMovement: { type: 'static', speed: 0.5 },
-    status: 'generated',
-    videoStatus: 'pending',
-  },
-])
+const scenes = ref<Scene[]>([])
+
+onMounted(() => {
+  const project = projectStore.currentProject
+  if (!project) return
+  scenes.value = (project.scenes || []).map((scene) => ({ ...scene }))
+  void validateAllPersistedVideos()
+})
+
+watch(scenes, (value) => {
+  const project = projectStore.currentProject
+  if (!project) return
+  project.scenes = value
+}, { deep: true })
 
 const completedCount = computed(() => 
   scenes.value.filter(s => s.videoStatus === 'generated').length
@@ -213,9 +226,14 @@ async function generateVideo(sceneId: string) {
       5000 // 每5秒查询一次
     )
 
-    scene.videoUrl = videoUrl
+    const persistentVideoUrl = await persistRemoteVideo(scene, videoUrl)
+    scene.videoUrl = persistentVideoUrl
     scene.videoStatus = 'generated'
     sceneProgress.value[sceneId] = 100
+    videoValidity.value[sceneId] = persistentVideoUrl === videoUrl ? 'unknown' : 'valid'
+    delete videoValidationMsg.value[sceneId]
+
+    await persistVideoState('分镜视频已保存')
 
     ElNotification.success({
       title: '视频生成成功',
@@ -233,6 +251,29 @@ async function generateVideo(sceneId: string) {
   }
 }
 
+async function persistRemoteVideo(scene: Scene, remoteUrl: string): Promise<string> {
+  if (!remoteUrl) return remoteUrl
+  if (remoteUrl.startsWith('/api/assets/')) return remoteUrl
+
+  try {
+    const ext = inferVideoExt(remoteUrl)
+    const filename = `scene-${scene.order || scene.id}-${Date.now()}.${ext}`
+    const asset = await assetService.importAssetFromUrl(remoteUrl, filename)
+    return asset.contentUrl
+  } catch (error: any) {
+    console.warn('分镜视频转存资产失败，将暂时使用远程链接:', error)
+    videoValidationMsg.value[scene.id] = '视频已生成，但持久化失败，建议点击“重新生成”重试'
+    return remoteUrl
+  }
+}
+
+function inferVideoExt(url: string): 'mp4' | 'webm' | 'mov' {
+  const lower = url.toLowerCase()
+  if (lower.includes('.webm')) return 'webm'
+  if (lower.includes('.mov')) return 'mov'
+  return 'mp4'
+}
+
 async function generateAllVideos() {
   const scenesToGenerate = scenes.value.filter(s => s.imageUrl && !s.videoUrl)
   
@@ -247,6 +288,8 @@ async function generateAllVideos() {
     for (const scene of scenesToGenerate) {
       await generateVideo(scene.id)
     }
+
+    await persistVideoState()
     
     ElNotification.success({
       title: '批量生成完成',
@@ -258,24 +301,108 @@ async function generateAllVideos() {
   }
 }
 
-function deleteVideo(sceneId: string) {
+async function deleteVideo(sceneId: string) {
   const scene = scenes.value.find(s => s.id === sceneId)
   if (scene) {
     scene.videoUrl = ''
     scene.videoStatus = 'pending'
     sceneProgress.value[sceneId] = 0
+    videoValidity.value[sceneId] = 'unknown'
+    delete videoValidationMsg.value[sceneId]
+    await persistVideoState()
     ElMessage.success('视频已删除')
   }
 }
 
-function goBack() {
+async function regenerateInvalidVideo(sceneId: string) {
+  const scene = scenes.value.find(s => s.id === sceneId)
+  if (!scene) return
+  if (!scene.imageUrl) {
+    ElMessage.warning('该分镜缺少分镜图，无法重生成视频')
+    return
+  }
+  scene.videoUrl = ''
+  scene.videoStatus = 'pending'
+  videoValidity.value[sceneId] = 'unknown'
+  delete videoValidationMsg.value[sceneId]
+  await persistVideoState()
+  await generateVideo(sceneId)
+}
+
+async function validateAllPersistedVideos() {
+  const targets = scenes.value.filter(scene => !!scene.videoUrl)
+  if (targets.length === 0) return
+
+  for (const scene of targets) {
+    await validateSceneVideo(scene)
+  }
+}
+
+async function validateSceneVideo(scene: Scene) {
+  if (!scene.videoUrl) return
+
+  const sceneId = scene.id
+  videoValidity.value[sceneId] = 'checking'
+  const ok = await canLoadVideo(scene.videoUrl)
+
+  if (ok) {
+    videoValidity.value[sceneId] = 'valid'
+    delete videoValidationMsg.value[sceneId]
+  } else {
+    videoValidity.value[sceneId] = 'invalid'
+    videoValidationMsg.value[sceneId] = '上次生成的视频链接已失效，请一键重生成'
+  }
+}
+
+function canLoadVideo(url: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    let done = false
+
+    const finish = (result: boolean) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      video.onloadedmetadata = null
+      video.oncanplay = null
+      video.onerror = null
+      resolve(result)
+    }
+
+    const timer = window.setTimeout(() => finish(false), 10000)
+
+    video.preload = 'metadata'
+    video.muted = true
+    video.onloadedmetadata = () => finish(true)
+    video.oncanplay = () => finish(true)
+    video.onerror = () => finish(false)
+    video.src = url
+  })
+}
+
+async function goBack() {
+  await persistVideoState()
   const projectId = route.params.id as string
   router.push(`/editor/${projectId}/storyboard`)
 }
 
-function saveAndNext() {
+async function saveAndNext() {
+  await persistVideoState('分镜视频状态已保存')
   const projectId = route.params.id as string
   router.push(`/editor/${projectId}/voice-lipsync`)
+}
+
+async function persistVideoState(successMessage?: string) {
+  const project = projectStore.currentProject
+  if (!project) return
+  try {
+    project.scenes = scenes.value
+    await projectStore.saveCurrentProject()
+    if (successMessage) ElMessage.success(successMessage)
+  } catch (error: any) {
+    console.error('保存分镜视频状态失败:', error)
+    ElMessage.error(error?.message || '保存分镜视频状态失败')
+  }
 }
 </script>
 
@@ -336,7 +463,7 @@ function saveAndNext() {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  transition: all 0.3s ease;
+  transition: all var(--motion-standard);
 
   &:hover {
     border-color: rgba(76, 175, 80, 0.3);
@@ -405,9 +532,32 @@ function saveAndNext() {
   color: #999; 
   line-height: 1.6;
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.video-url-checking {
+  font-size: 12px;
+  color: #a5adb8;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.video-url-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #ffc069;
+  background: rgba(255, 183, 77, 0.08);
+  border: 1px solid rgba(255, 183, 77, 0.28);
+  border-radius: 8px;
+  padding: 8px 10px;
 }
 
 .video-actions {

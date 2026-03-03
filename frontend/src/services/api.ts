@@ -41,9 +41,17 @@ apiClient.interceptors.response.use(
 aiClient.interceptors.response.use(
   (response) => response.data,
   (error) => {
-    const message = error.response?.data?.detail || error.message || 'AI服务请求失败'
+    const data = error.response?.data
+    const message =
+      (typeof data === 'string' && data.trim()) ||
+      data?.detail ||
+      data?.message ||
+      data?.error ||
+      error.message ||
+      'AI服务请求失败'
+    error.message = message
     console.error('AI Service Error:', message)
-    return Promise.reject(new Error(message))
+    return Promise.reject(error)
   }
 )
 

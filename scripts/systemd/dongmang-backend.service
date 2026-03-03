@@ -1,0 +1,16 @@
+[Unit]
+Description=DongMang Backend (NestJS)
+After=network.target
+
+[Service]
+Type=simple
+User=__APP_USER__
+WorkingDirectory=__APP_DIR__/backend
+Environment="NODE_ENV=production"
+Environment="PORT=__BACKEND_PORT__"
+ExecStart=/usr/bin/node __APP_DIR__/backend/dist/main.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,7 @@ import {
   AddPropDto,
   AddBackgroundDto,
   AddVoiceTrackDto,
+  SaveProjectDto,
   ProjectEntity,
   RoleEntity,
   SceneEntity,
@@ -89,6 +90,174 @@ export class ProjectService {
     return this.findOne(id);
   }
 
+  saveFull(id: string, dto: SaveProjectDto): ProjectEntity {
+    const existing = this.findOne(id);
+    const merged = {
+      ...existing,
+      ...dto,
+      globalSettings: {
+        ...existing.globalSettings,
+        ...(dto.globalSettings || {}),
+      },
+    };
+
+    const roles = dto.roles ?? existing.roles ?? [];
+    const scenes = dto.scenes ?? existing.scenes ?? [];
+    const props = dto.props ?? existing.props ?? [];
+    const sceneBackgrounds = dto.sceneBackgrounds ?? existing.sceneBackgrounds ?? [];
+    const voiceTracks = dto.voiceTracks ?? existing.voiceTracks ?? [];
+
+    const now = new Date().toISOString();
+
+    const runSave = this.db.transaction(() => {
+      this.db.prepare(`
+        UPDATE projects
+        SET title = ?,
+            description = ?,
+            script = ?,
+            status = ?,
+            cover_url = ?,
+            video_url = ?,
+            gs_story_type = ?,
+            gs_custom_story_type = ?,
+            gs_anime_style = ?,
+            gs_aspect_ratio = ?,
+            gs_tone = ?,
+            updated_at = ?
+        WHERE id = ?
+      `).run(
+        merged.title || '',
+        merged.description || '',
+        merged.script || '',
+        merged.status || 'draft',
+        merged.coverUrl || '',
+        merged.videoUrl || '',
+        merged.globalSettings.storyType || '',
+        merged.globalSettings.customStoryType || '',
+        merged.globalSettings.animeStyle || 'japanese',
+        merged.globalSettings.aspectRatio || '16:9',
+        merged.globalSettings.tone || '',
+        now,
+        id,
+      );
+
+      this.db.prepare(
+        'DELETE FROM scene_roles WHERE scene_id IN (SELECT id FROM scenes WHERE project_id = ?)'
+      ).run(id);
+      this.db.prepare('DELETE FROM scenes WHERE project_id = ?').run(id);
+      this.db.prepare('DELETE FROM roles WHERE project_id = ?').run(id);
+      this.db.prepare('DELETE FROM props WHERE project_id = ?').run(id);
+      this.db.prepare('DELETE FROM scene_backgrounds WHERE project_id = ?').run(id);
+      this.db.prepare('DELETE FROM voice_tracks WHERE project_id = ?').run(id);
+
+      const insertRole = this.db.prepare(
+        'INSERT INTO roles (id, project_id, name, description, avatar_url, voice_id, role_forms_json) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      );
+      roles.forEach((role: any) => {
+        const roleId = role.id || uuid();
+        insertRole.run(
+          roleId,
+          id,
+          role.name || '',
+          role.description || '',
+          role.avatarUrl || '',
+          role.voiceId || '',
+          JSON.stringify(Array.isArray(role.roleForms) ? role.roleForms : []),
+        );
+      });
+
+      const insertScene = this.db.prepare(`
+        INSERT INTO scenes (
+          id, project_id, "order", description, image_url, video_url, thumbnail_url,
+          duration, transition, narration, background_id, camera_type, camera_speed,
+          status, video_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const insertSceneRole = this.db.prepare(
+        'INSERT INTO scene_roles (scene_id, role_id) VALUES (?, ?)'
+      );
+
+      scenes.forEach((scene: any, index: number) => {
+        const sceneId = scene.id || uuid();
+        const order = scene.order || index + 1;
+        const cameraType = scene.cameraMovement?.type || 'static';
+        const cameraSpeed = scene.cameraMovement?.speed ?? 0;
+
+        insertScene.run(
+          sceneId,
+          id,
+          order,
+          scene.description || '',
+          scene.imageUrl || '',
+          scene.videoUrl || '',
+          scene.thumbnailUrl || '',
+          scene.duration ?? 3,
+          scene.transition || 'fade',
+          scene.narration || '',
+          scene.backgroundId || '',
+          cameraType,
+          cameraSpeed,
+          scene.status || 'pending',
+          scene.videoStatus || 'pending',
+        );
+
+        const roleIds = Array.isArray(scene.roleIds) ? scene.roleIds : [];
+        roleIds.forEach((roleId: string) => {
+          if (roleId) insertSceneRole.run(sceneId, roleId);
+        });
+      });
+
+      const insertProp = this.db.prepare(
+        'INSERT INTO props (id, project_id, name, description, image_url) VALUES (?, ?, ?, ?, ?)'
+      );
+      props.forEach((prop: any) => {
+        const propId = prop.id || uuid();
+        insertProp.run(
+          propId,
+          id,
+          prop.name || '',
+          prop.description || '',
+          prop.imageUrl || '',
+        );
+      });
+
+      const insertBg = this.db.prepare(
+        'INSERT INTO scene_backgrounds (id, project_id, name, description, image_url) VALUES (?, ?, ?, ?, ?)'
+      );
+      sceneBackgrounds.forEach((bg: any) => {
+        const bgId = bg.id || uuid();
+        insertBg.run(
+          bgId,
+          id,
+          bg.name || '',
+          bg.description || '',
+          bg.imageUrl || '',
+        );
+      });
+
+      const insertVoice = this.db.prepare(
+        `INSERT INTO voice_tracks (id, project_id, scene_id, role_id, text, audio_url, duration, start_time)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      voiceTracks.forEach((track: any) => {
+        const trackId = track.id || uuid();
+        insertVoice.run(
+          trackId,
+          id,
+          track.sceneId || '',
+          track.roleId || '',
+          track.text || '',
+          track.audioUrl || '',
+          track.duration ?? 0,
+          track.startTime ?? 0,
+        );
+      });
+    });
+
+    runSave();
+    return this.findOne(id);
+  }
+
   remove(id: string): void {
     this.findOne(id); // throws if not exists
     this.db.prepare('DELETE FROM projects WHERE id = ?').run(id);
@@ -114,9 +283,9 @@ export class ProjectService {
     this.findOne(projectId);
     const id = uuid();
     this.db.prepare(`
-      INSERT INTO roles (id, project_id, name, description, avatar_url)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, projectId, dto.name, dto.description || '', dto.avatarUrl || '');
+      INSERT INTO roles (id, project_id, name, description, avatar_url, role_forms_json)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, projectId, dto.name, dto.description || '', dto.avatarUrl || '', '');
     this.touch(projectId);
     return { id, name: dto.name, description: dto.description || '', avatarUrl: dto.avatarUrl || '', voiceId: '' };
   }
@@ -277,7 +446,18 @@ export class ProjectService {
     return rows.map((r) => ({
       id: r.id, name: r.name, description: r.description,
       avatarUrl: r.avatar_url, voiceId: r.voice_id,
+      roleForms: this.parseRoleForms(r.role_forms_json),
     }));
+  }
+
+  private parseRoleForms(raw: string): any[] {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   }
 
   private getScenes(projectId: string): SceneEntity[] {

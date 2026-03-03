@@ -85,13 +85,15 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { STORY_TYPES, ASPECT_RATIOS } from '@/types'
+import { useProjectStore } from '@/stores/project'
 import type { StoryType, AnimeStyle, AspectRatio } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
+const projectStore = useProjectStore()
 
 const storyTypes = STORY_TYPES
 const ratios = ASPECT_RATIOS
@@ -115,6 +117,37 @@ const form = reactive({
   aspectRatio: '16:9' as AspectRatio,
   tone: '',
 })
+
+onMounted(() => {
+  const project = projectStore.currentProject
+  if (!project) return
+
+  form.title = project.title || ''
+  form.storyType = (project.globalSettings?.storyType || 'ancient-hero') as StoryType
+  form.customStoryType = project.globalSettings?.customStoryType || ''
+  form.animeStyle = (project.globalSettings?.animeStyle || 'cinematic') as AnimeStyle
+  form.aspectRatio = (project.globalSettings?.aspectRatio || '16:9') as AspectRatio
+  form.tone = project.globalSettings?.tone || ''
+})
+
+watch(
+  form,
+  (value) => {
+    const project = projectStore.currentProject
+    if (!project) return
+
+    project.title = value.title
+    project.globalSettings = {
+      ...project.globalSettings,
+      storyType: value.storyType,
+      customStoryType: value.customStoryType,
+      animeStyle: value.animeStyle,
+      aspectRatio: value.aspectRatio,
+      tone: value.tone,
+    }
+  },
+  { deep: true },
+)
 
 function ratioPreviewStyle(ratio: typeof ratios[0]) {
   const scale = 40
@@ -178,7 +211,7 @@ function saveAndNext() {
   color: #999;
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--motion-standard);
 
   &:hover {
     border-color: rgba(76, 175, 80, 0.4);
@@ -209,7 +242,7 @@ function saveAndNext() {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: #1e1e1e;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--motion-standard);
 
   .style-emoji { font-size: 28px; }
   .style-name { font-size: 12px; color: #999; }
@@ -242,7 +275,7 @@ function saveAndNext() {
   cursor: pointer;
   font-size: 12px;
   color: #999;
-  transition: all 0.2s ease;
+  transition: all var(--motion-standard);
 
   &:hover { border-color: rgba(76, 175, 80, 0.4); }
   &.active {

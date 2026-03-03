@@ -1,0 +1,15 @@
+[Unit]
+Description=DongMang AI Service (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=__APP_USER__
+WorkingDirectory=__APP_DIR__/ai-service
+Environment="PATH=__APP_DIR__/ai-service/.venv/bin"
+ExecStart=__APP_DIR__/ai-service/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port __AI_PORT__
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

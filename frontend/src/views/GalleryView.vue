@@ -161,13 +161,13 @@ const filteredWorks = computed(() => {
 
 .tag {
   padding: 6px 16px;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   font-size: 13px;
   color: #aaa;
   cursor: pointer;
   background: #1a1a1a;
   border: 1px solid transparent;
-  transition: all 0.2s;
+  transition: all var(--motion-standard);
 
   &:hover { color: #eaeaea; }
   &.active {
@@ -182,7 +182,7 @@ const filteredWorks = computed(() => {
   border: 1px solid #333;
   color: #ccc;
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   font-size: 13px;
 }
 
@@ -194,11 +194,11 @@ const filteredWorks = computed(() => {
 
 .gallery-card {
   background: #1a1a1a;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   cursor: pointer;
   border: 1px solid rgba(255, 255, 255, 0.04);
-  transition: all 0.3s;
+  transition: all var(--motion-standard);
 
   &:hover {
     transform: translateY(-4px);
@@ -223,7 +223,7 @@ const filteredWorks = computed(() => {
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.3s;
+  transition: opacity var(--motion-standard);
 }
 
 .play-btn {
@@ -247,7 +247,7 @@ const filteredWorks = computed(() => {
   color: #4CAF50;
   font-size: 11px;
   padding: 3px 10px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
 }
 
 .card-body {

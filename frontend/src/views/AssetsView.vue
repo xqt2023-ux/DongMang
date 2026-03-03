@@ -1,173 +1,423 @@
 <template>
   <div class="assets-page">
-    <div class="page-header">
-      <h1>资产库</h1>
-      <button class="btn-upload">📁 上传资产</button>
-    </div>
+    <div class="assets-shell">
+      <aside class="folder-panel">
+        <div class="panel-title">个人资产库</div>
+        <div class="tree-group">
+          <div class="tree-group-title">素材库</div>
+          <button
+            v-for="folder in folders"
+            :key="folder.key"
+            class="tree-item"
+            :class="{ active: activeFolder === folder.key }"
+            @click="activeFolder = folder.key"
+          >
+            <span class="tree-icon">📁</span>
+            <span class="tree-text">{{ folder.label }}</span>
+            <span class="tree-count">{{ getCount(folder.key) }}</span>
+          </button>
+        </div>
+      </aside>
 
-    <div class="assets-tabs">
-      <span
-        class="tab"
-        :class="{ active: activeTab === tab.key }"
-        v-for="tab in tabs"
-        :key="tab.key"
-        @click="activeTab = tab.key"
-      >{{ tab.label }} ({{ getCount(tab.key) }})</span>
-    </div>
+      <main class="library-panel">
+        <div class="library-header">
+          <div>
+            <h1>道具库</h1>
+            <p class="library-path">个人资产库 > 素材库 > {{ currentFolderLabel }}</p>
+          </div>
+          <button class="btn-new-folder" @click="createFolder">+ 新建文件夹</button>
+        </div>
 
-    <div class="assets-grid" v-if="filteredAssets.length">
-      <div class="asset-card" v-for="asset in filteredAssets" :key="asset.id">
-        <div class="asset-preview">
-          <img v-if="asset.type === 'image'" :src="asset.url" :alt="asset.name" />
-          <div v-else-if="asset.type === 'audio'" class="audio-preview">
-            <span class="audio-icon">🎵</span>
-          </div>
-          <div v-else-if="asset.type === 'video'" class="video-preview">
-            <span class="video-icon">🎬</span>
-          </div>
-          <div v-else class="file-preview">
-            <span class="file-icon">📄</span>
+        <div class="assets-grid">
+          <button class="upload-tile" @click="triggerUpload">
+            <span class="plus">＋</span>
+            <span>上传道具图</span>
+          </button>
+
+          <div class="asset-card" v-for="asset in filteredAssets" :key="asset.id">
+            <span class="asset-tag">精选</span>
+            <div class="asset-preview">
+              <img v-if="asset.type === 'image'" :src="asset.url" :alt="asset.name" />
+              <div v-else-if="asset.type === 'audio'" class="audio-preview">🎵</div>
+              <div v-else-if="asset.type === 'video'" class="video-preview">🎬</div>
+              <div v-else class="file-preview">📄</div>
+            </div>
+            <div class="asset-info">
+              <span class="asset-name">{{ asset.name }}</span>
+              <span class="asset-time">{{ formatDate(asset.createdAt) }}</span>
+            </div>
+            <div class="asset-actions">
+              <button
+                class="btn-mini"
+                title="下载"
+                :disabled="!asset.downloadUrl"
+                @click="downloadAsset(asset)"
+              >⬇</button>
+              <button class="btn-mini danger" title="删除" @click="deleteAsset(asset.id)">🗑</button>
+            </div>
           </div>
         </div>
-        <div class="asset-info">
-          <span class="asset-name">{{ asset.name }}</span>
-          <span class="asset-size">{{ asset.size }}</span>
+
+        <div class="empty-state" v-if="!filteredAssets.length">
+          <div class="empty-icon">📦</div>
+          <p>当前文件夹暂无素材</p>
         </div>
-        <div class="asset-actions">
-          <button class="btn-mini" title="下载">⬇</button>
-          <button class="btn-mini danger" title="删除" @click="deleteAsset(asset.id)">🗑</button>
-        </div>
-      </div>
+      </main>
     </div>
 
-    <div class="empty-state" v-else>
-      <div class="empty-icon">📦</div>
-      <p>暂无{{ currentTabLabel }}资产</p>
-    </div>
+    <input
+      ref="fileInput"
+      type="file"
+      multiple
+      accept="image/*,audio/*,video/*"
+      class="file-input"
+      @change="handleUpload"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import type { Asset, AssetType } from '@/types'
+import { ref, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { assetService } from '@/services'
 
-const activeTab = ref<AssetType | 'all'>('all')
+type LocalAssetType = 'image' | 'audio' | 'video' | 'file'
+type ImageCategory = 'role' | 'scene' | 'prop' | 'unknown'
+type FolderKey = 'all' | 'props' | 'roles' | 'scenes' | 'audio' | 'video' | 'files'
 
-const tabs = [
-  { key: 'all' as const, label: '全部' },
-  { key: 'image' as AssetType, label: '图片' },
-  { key: 'audio' as AssetType, label: '音频' },
-  { key: 'video' as AssetType, label: '视频' },
+interface LocalAsset {
+  id: string
+  name: string
+  type: LocalAssetType
+  imageCategory: ImageCategory
+  url: string
+  downloadUrl: string
+  size: string
+  createdAt: string
+}
+
+const activeFolder = ref<FolderKey>('props')
+const fileInput = ref<HTMLInputElement | null>(null)
+
+const folders: Array<{ key: FolderKey; label: string }> = [
+  { key: 'all', label: '全部素材' },
+  { key: 'props', label: '道具库' },
+  { key: 'roles', label: '角色库' },
+  { key: 'scenes', label: '场景库' },
+  { key: 'audio', label: '音频库' },
+  { key: 'video', label: '视频库' },
+  { key: 'files', label: '文件库' },
 ]
 
-const currentTabLabel = computed(() => {
-  return tabs.find(t => t.key === activeTab.value)?.label || ''
+const currentFolderLabel = computed(() => {
+  return folders.find(t => t.key === activeFolder.value)?.label || ''
 })
 
-// 示例数据
-const assets = ref<Asset[]>([
-  { id: '1', name: '角色_霍去病.png', type: 'image', url: 'https://picsum.photos/seed/asset1/200/200', size: '1.2 MB', projectId: 'p1', createdAt: '2026-02-04T10:00:00' },
-  { id: '2', name: '场景_大漠.png', type: 'image', url: 'https://picsum.photos/seed/asset2/200/200', size: '2.4 MB', projectId: 'p1', createdAt: '2026-02-04T10:05:00' },
-  { id: '3', name: 'BGM_战斗.mp3', type: 'audio', url: '', size: '4.8 MB', projectId: 'p1', createdAt: '2026-02-04T10:10:00' },
-  { id: '4', name: '角色_林昼.png', type: 'image', url: 'https://picsum.photos/seed/asset3/200/200', size: '1.1 MB', projectId: 'p2', createdAt: '2026-02-04T11:00:00' },
-  { id: '5', name: '片段_01.mp4', type: 'video', url: '', size: '12.3 MB', projectId: 'p2', createdAt: '2026-02-04T12:00:00' },
-  { id: '6', name: '旁白_第一幕.mp3', type: 'audio', url: '', size: '2.1 MB', projectId: 'p2', createdAt: '2026-02-04T12:30:00' },
-])
+const assets = ref<LocalAsset[]>([])
+
+onMounted(async () => {
+  const list = await assetService.listAssets()
+  assets.value = list.map((item) => ({
+    id: item.id,
+    name: item.name,
+    type: getAssetTypeByMime(item.mimeType),
+    imageCategory: getImageCategory(item.name, item.mimeType),
+    url: item.contentUrl,
+    downloadUrl: item.downloadUrl,
+    size: formatFileSize(item.size),
+    createdAt: item.createdAt,
+  }))
+})
 
 function getCount(key: string) {
   if (key === 'all') return assets.value.length
-  return assets.value.filter(a => a.type === key).length
+  return assets.value.filter(a => belongsToFolder(a, key as FolderKey)).length
 }
 
 const filteredAssets = computed(() => {
-  if (activeTab.value === 'all') return assets.value
-  return assets.value.filter(a => a.type === activeTab.value)
+  if (activeFolder.value === 'all') return assets.value
+  return assets.value.filter(a => belongsToFolder(a, activeFolder.value))
 })
 
 function deleteAsset(id: string) {
-  assets.value = assets.value.filter(a => a.id !== id)
+  assetService.deleteAsset(id).then(() => {
+    assets.value = assets.value.filter(a => a.id !== id)
+  })
+}
+
+function downloadAsset(asset: LocalAsset) {
+  if (!asset.downloadUrl) return
+
+  const link = document.createElement('a')
+  link.href = asset.downloadUrl
+  link.download = asset.name
+  link.rel = 'noopener'
+  link.click()
+}
+
+function triggerUpload() {
+  fileInput.value?.click()
+}
+
+function createFolder() {
+  ElMessage.info('文件夹管理功能建设中')
+}
+
+async function handleUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = input.files ? Array.from(input.files) : []
+  if (files.length === 0) return
+
+  const uploaded = await Promise.all(files.map((file) => assetService.uploadAsset(file)))
+  const newAssets = uploaded.map((item) => ({
+    id: item.id,
+    name: item.name,
+    type: getAssetTypeByMime(item.mimeType),
+    imageCategory: getImageCategory(item.name, item.mimeType),
+    url: item.contentUrl,
+    downloadUrl: item.downloadUrl,
+    size: formatFileSize(item.size),
+    createdAt: item.createdAt,
+  }))
+
+  assets.value = [...newAssets, ...assets.value]
+  input.value = ''
+}
+
+function getAssetTypeByMime(mimeType: string): LocalAssetType {
+  if (mimeType.startsWith('image/')) return 'image'
+  if (mimeType.startsWith('audio/')) return 'audio'
+  if (mimeType.startsWith('video/')) return 'video'
+  return 'file'
+}
+
+function belongsToFolder(asset: LocalAsset, folder: FolderKey) {
+  if (folder === 'audio') return asset.type === 'audio'
+  if (folder === 'video') return asset.type === 'video'
+  if (folder === 'files') return asset.type === 'file'
+  if (folder === 'roles') return asset.type === 'image' && asset.imageCategory === 'role'
+  if (folder === 'scenes') return asset.type === 'image' && asset.imageCategory === 'scene'
+  if (folder === 'props') return asset.type === 'image' && asset.imageCategory === 'prop'
+  return true
+}
+
+function getImageCategory(name: string, mimeType: string): ImageCategory {
+  if (!mimeType.startsWith('image/')) return 'unknown'
+  const lowerName = name.toLowerCase()
+  if (/(角色|avatar|role|人物|人设|形象)/i.test(lowerName)) return 'role'
+  if (/(场景|背景|bg|scene|background)/i.test(lowerName)) return 'scene'
+  if (/(道具|prop|item|weapon|tool)/i.test(lowerName)) return 'prop'
+  return 'unknown'
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(1)} KB`
+  const mb = kb / 1024
+  return `${mb.toFixed(1)} MB`
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '-'
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 </script>
 
 <style scoped lang="scss">
 .assets-page {
   min-height: 100%;
-  overflow-y: auto;
-  padding: 32px;
-  max-width: 1200px;
-  margin: 0 auto;
+  padding: 24px;
 }
 
-.page-header {
+.assets-shell {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  min-height: calc(100vh - 128px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  background: #1e2125;
+}
+
+.folder-panel {
+  background: #202328;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 16px 12px;
+}
+
+.panel-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: #eaecef;
+  margin-bottom: 18px;
+  text-align: center;
+}
+
+.tree-group {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-
-  h1 { font-size: 28px; font-weight: 700; color: #eaeaea; }
+  flex-direction: column;
+  gap: 6px;
 }
 
-.btn-upload {
-  background: #1a1a1a;
-  border: 1px dashed #555;
-  color: #ccc;
-  padding: 10px 24px;
-  border-radius: 8px;
+.tree-group-title {
   font-size: 14px;
+  color: #aeb4bc;
+  margin: 8px 10px;
+}
+
+.tree-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #cfd6de;
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
-  transition: all 0.2s;
+  text-align: left;
+  transition: all var(--motion-standard);
 
   &:hover {
-    border-color: #4CAF50;
-    color: #4CAF50;
+    background: rgba(255, 255, 255, 0.06);
   }
-}
 
-.assets-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 28px;
-}
-
-.tab {
-  padding: 6px 18px;
-  border-radius: 20px;
-  font-size: 13px;
-  color: #aaa;
-  cursor: pointer;
-  background: #1a1a1a;
-  transition: all 0.2s;
-
-  &:hover { color: #eaeaea; }
   &.active {
-    background: rgba(76, 175, 80, 0.15);
-    color: #4CAF50;
+    background: rgba(127, 224, 102, 0.12);
+    color: #eaf7e4;
   }
+}
+
+.tree-icon {
+  opacity: 0.9;
+}
+
+.tree-text {
+  flex: 1;
+  font-size: 14px;
+}
+
+.tree-count {
+  font-size: 12px;
+  color: #8b949f;
+}
+
+.library-panel {
+  padding: 18px 20px;
+  overflow: auto;
+}
+
+.library-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+
+  h1 {
+    font-size: 30px;
+    color: #f1f4f8;
+    margin-bottom: 6px;
+  }
+}
+
+.library-path {
+  color: #9aa3ad;
+  font-size: 13px;
+}
+
+.btn-new-folder {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  color: #e5e9ee;
+  padding: 9px 16px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--motion-standard);
+
+  &:hover {
+    background: rgba(127, 224, 102, 0.08);
+    border-color: rgba(127, 224, 102, 0.7);
+    color: var(--accent-success);
+  }
+
+  &:active {
+    transform: translateY(1px);
+  }
+}
+
+.file-input {
+  display: none;
 }
 
 .assets-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.upload-tile {
+  aspect-ratio: 1;
+  border: 1px dashed rgba(255, 255, 255, 0.36);
+  border-radius: var(--radius-xl);
+  background: rgba(255, 255, 255, 0.02);
+  color: #e7edf3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all var(--motion-standard);
+
+  .plus {
+    font-size: 48px;
+    line-height: 1;
+  }
+
+  &:hover {
+    background: rgba(127, 224, 102, 0.08);
+    transform: translateY(-2px);
+    border-color: rgba(127, 224, 102, 0.7);
+    color: var(--accent-success);
+  }
 }
 
 .asset-card {
-  background: #1a1a1a;
-  border-radius: 10px;
+  position: relative;
+  background: #262a31;
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  transition: all 0.3s;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all var(--motion-standard);
 
   &:hover {
-    border-color: rgba(76, 175, 80, 0.2);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    transform: translateY(-2px);
+    border-color: rgba(127, 224, 102, 0.25);
+    box-shadow: var(--shadow-card-hover);
   }
+}
+
+.asset-tag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  background: #ff8a1f;
+  color: #fff;
+  font-size: 11px;
+  border-radius: var(--radius-xs);
+  padding: 2px 6px;
 }
 
 .asset-preview {
   aspect-ratio: 1;
   overflow: hidden;
-  background: #111;
+  background: #f3f5f8;
 
   img { width: 100%; height: 100%; object-fit: cover; }
 }
@@ -183,53 +433,80 @@ function deleteAsset(id: string) {
 }
 
 .asset-info {
-  padding: 10px 12px;
+  padding: 10px 12px 6px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .asset-name {
-  font-size: 12px;
-  color: #ccc;
+  font-size: 13px;
+  color: #f0f3f7;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
 }
 
-.asset-size {
-  font-size: 11px;
-  color: #666;
-  flex-shrink: 0;
-  margin-left: 8px;
+.asset-time {
+  font-size: 12px;
+  color: #99a1aa;
 }
 
 .asset-actions {
-  padding: 0 12px 10px;
+  padding: 0 12px 12px;
   display: flex;
   gap: 6px;
 }
 
 .btn-mini {
   background: transparent;
-  border: 1px solid #333;
-  border-radius: 4px;
-  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #d4dae2;
+  border-radius: var(--radius-xs);
+  padding: 4px 10px;
   cursor: pointer;
   font-size: 12px;
-  transition: all 0.2s;
+  transition: all var(--motion-standard);
 
-  &:hover { border-color: #4CAF50; }
-  &.danger:hover { border-color: #f44336; }
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  &:hover {
+    background: rgba(127, 224, 102, 0.08);
+    border-color: #4CAF50;
+    color: var(--accent-success);
+  }
+
+  &:active {
+    transform: translateY(1px);
+  }
+
+  &.danger:hover {
+    background: rgba(244, 67, 54, 0.08);
+    border-color: #f44336;
+    color: var(--accent-danger);
+  }
 }
 
 .empty-state {
   text-align: center;
   padding: 80px 20px;
-  color: #888;
+  color: #98a2ae;
 
   .empty-icon { font-size: 48px; margin-bottom: 16px; }
   p { font-size: 15px; }
+}
+
+@media (max-width: 1100px) {
+  .assets-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .folder-panel {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
 }
 </style>

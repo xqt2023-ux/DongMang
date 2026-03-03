@@ -25,7 +25,10 @@
       <div class="voice-card" v-for="(scene, index) in scenes" :key="scene.id">
         <div class="voice-header">
           <span class="voice-number">分镜 {{ index + 1 }}</span>
-          <span class="voice-duration">{{ scene.duration }}s</span>
+          <div class="voice-meta">
+            <span class="voice-duration">{{ scene.duration }}s</span>
+            <span v-if="getVoiceTrack(scene.id)?.voiceSource" class="voice-source">{{ getVoiceSourceLabel(getVoiceTrack(scene.id)?.voiceSource) }}</span>
+          </div>
         </div>
         <div class="voice-body">
           <div class="voice-text">
@@ -41,7 +44,10 @@
               <audio :src="getVoiceTrack(scene.id)?.audioUrl" controls />
             </div>
             <div v-else class="voice-placeholder">暂无配音</div>
-            <button class="btn-ghost btn-sm" @click="generateVoice(scene.id)">生成配音</button>
+            <button class="btn-ghost btn-sm" @click="generateVoice(scene.id)" :disabled="generatingScenes[scene.id] || isGenerating">
+              <span v-if="generatingScenes[scene.id]">生成中...</span>
+              <span v-else>生成配音</span>
+            </button>
           </div>
         </div>
       </div>
@@ -55,31 +61,145 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElNotification } from 'element-plus'
+import { aiService } from '@/services/ai'
+import { useProjectStore } from '@/stores/project'
 import type { Scene, VoiceTrack } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
+const projectStore = useProjectStore()
 
 const selectedVoice = ref('narration-pro')
 const isGenerating = ref(false)
+const generatingScenes = ref<Record<string, boolean>>({})
 
 const scenes = ref<Scene[]>([])
 const voiceTracks = ref<VoiceTrack[]>([])
+
+onMounted(() => {
+  const project = projectStore.currentProject
+  if (!project) return
+
+  scenes.value = [...(project.scenes || [])]
+  voiceTracks.value = [...(project.voiceTracks || [])]
+})
+
+watch(scenes, (value) => {
+  const project = projectStore.currentProject
+  if (!project) return
+  project.scenes = value
+}, { deep: true })
+
+watch(voiceTracks, (value) => {
+  const project = projectStore.currentProject
+  if (!project) return
+  project.voiceTracks = value
+}, { deep: true })
 
 function getVoiceTrack(sceneId: string) {
   return voiceTracks.value.find(v => v.sceneId === sceneId)
 }
 
-function generateVoice(_sceneId: string) {
-  // TODO: 调用 TTS 服务
+function getVoiceSourceLabel(source?: string) {
+  const sourceMap: Record<string, string> = {
+    'edge-tts': 'Edge TTS',
+    gtts: 'gTTS',
+    'local-fallback': '本地兜底',
+  }
+  return sourceMap[source || ''] || '未知来源'
+}
+
+async function generateVoice(sceneId: string) {
+  const scene = scenes.value.find(s => s.id === sceneId)
+  if (!scene) return
+
+  const text = (scene.narration || '').trim()
+  if (!text) {
+    ElMessage.warning(`分镜 ${scene.order} 还没有台词/旁白`)
+    return
+  }
+
+  generatingScenes.value[sceneId] = true
+  try {
+    const result = await aiService.generateVoice(text, selectedVoice.value, sceneId)
+    const existing = voiceTracks.value.find(v => v.sceneId === sceneId)
+
+    if (existing) {
+      existing.text = text
+      existing.audioUrl = result.audioUrl
+      existing.voiceSource = result.voiceSource
+      existing.duration = scene.duration || existing.duration || 0
+    } else {
+      voiceTracks.value.push({
+        id: `voice-${sceneId}-${Date.now()}`,
+        sceneId,
+        roleId: '',
+        text,
+        audioUrl: result.audioUrl,
+        voiceSource: result.voiceSource,
+        duration: scene.duration || 0,
+        startTime: 0,
+      })
+    }
+
+    const sourceLabel = getVoiceSourceLabel(result.voiceSource)
+    ElMessage.success(`分镜 ${scene.order} 配音生成成功（来源：${sourceLabel}）`)
+  } catch (error: any) {
+    ElNotification.error({
+      title: `分镜 ${scene.order} 配音失败`,
+      message: error?.message || '请稍后重试',
+      duration: 5000,
+    })
+  } finally {
+    generatingScenes.value[sceneId] = false
+  }
 }
 
 async function generateAllVoices() {
+  const candidates = scenes.value.filter(s => (s.narration || '').trim())
+  if (candidates.length === 0) {
+    ElMessage.warning('请先填写分镜台词/旁白')
+    return
+  }
+
   isGenerating.value = true
-  await new Promise(r => setTimeout(r, 2000))
-  isGenerating.value = false
+  let success = 0
+
+  try {
+    for (const scene of candidates) {
+      try {
+        await generateVoice(scene.id)
+        if (getVoiceTrack(scene.id)?.audioUrl) {
+          success += 1
+        }
+      } catch {
+        // 单条失败不阻断批量流程
+      }
+    }
+
+    if (projectStore.currentProject) {
+      await projectStore.saveCurrentProject()
+    }
+
+    if (success > 0) {
+      ElNotification.success({
+        title: '批量生成完成',
+        message: `成功生成 ${success}/${candidates.length} 条配音`,
+        duration: 4000,
+      })
+    } else {
+      ElNotification.warning({
+        title: '批量生成未成功',
+        message: '请检查 AI 配音服务是否可用',
+        duration: 5000,
+      })
+    }
+  } finally {
+    isGenerating.value = false
+  }
 }
 
 function goBack() {
@@ -134,7 +254,16 @@ function saveAndNext() {
 }
 
 .voice-number { font-size: 14px; font-weight: 700; color: #4CAF50; }
+.voice-meta { display: flex; align-items: center; gap: 8px; }
 .voice-duration { font-size: 12px; color: #666; }
+.voice-source {
+  font-size: 11px;
+  color: #9fd1ff;
+  background: rgba(77, 130, 187, 0.18);
+  border: 1px solid rgba(98, 153, 214, 0.35);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
 
 .voice-body {
   padding: 16px;

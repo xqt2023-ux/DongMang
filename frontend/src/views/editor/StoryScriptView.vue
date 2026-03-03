@@ -21,6 +21,13 @@
         </button>
       </div>
 
+      <div v-if="hasGenerationMeta" class="generation-meta">
+        <el-tag size="small" :type="generationFallbackUsed ? 'warning' : 'success'">
+          {{ generationFallbackUsed ? '兜底剧本' : '模型剧本' }}
+        </el-tag>
+        <span class="meta-text">来源模型：{{ generationModelUsed }}</span>
+      </div>
+
       <div class="form-group">
         <label class="form-label">完整剧本</label>
         <el-input
@@ -40,17 +47,42 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { aiService } from '@/services'
+import { useProjectStore } from '@/stores/project'
 
 const route = useRoute()
 const router = useRouter()
+const projectStore = useProjectStore()
 
 const synopsis = ref('')
 const fullScript = ref('')
 const isGenerating = ref(false)
+const generationModelUsed = ref('')
+const generationFallbackUsed = ref(false)
+const hasGenerationMeta = computed(() => !!generationModelUsed.value)
+
+onMounted(() => {
+  const project = projectStore.currentProject
+  if (!project) return
+
+  synopsis.value = project.description || ''
+  fullScript.value = project.script || ''
+})
+
+watch(synopsis, (value) => {
+  const project = projectStore.currentProject
+  if (!project) return
+  project.description = value
+})
+
+watch(fullScript, (value) => {
+  const project = projectStore.currentProject
+  if (!project) return
+  project.script = value
+})
 
 async function generateScript() {
   if (!synopsis.value.trim()) {
@@ -62,9 +94,17 @@ async function generateScript() {
   ElMessage.info('正在生成剧本，请稍候...')
   
   try {
-    const script = await aiService.generateScript(synopsis.value, 'fantasy')
-    fullScript.value = script
-    ElMessage.success('剧本生成完成！')
+    const result = await aiService.generateScript(synopsis.value, 'fantasy')
+    fullScript.value = result.script
+    generationModelUsed.value = result.modelUsed || 'unknown'
+    generationFallbackUsed.value = !!result.fallbackUsed
+    const project = projectStore.currentProject
+    if (project) project.script = result.script
+
+    const sourceLabel = generationFallbackUsed.value
+      ? `兜底模板（${generationModelUsed.value}）`
+      : `模型：${generationModelUsed.value}`
+    ElMessage.success(`剧本生成完成！来源：${sourceLabel}`)
   } catch (error) {
     console.error('生成剧本失败:', error)
     ElMessage.error('剧本生成失败，请稍后重试')
@@ -79,6 +119,11 @@ function goBack() {
 }
 
 function saveAndNext() {
+  const project = projectStore.currentProject
+  if (project) {
+    project.description = synopsis.value
+    project.script = fullScript.value
+  }
   const projectId = route.params.id as string
   router.push(`/editor/${projectId}/scene-assets`)
 }
@@ -94,6 +139,19 @@ function saveAndNext() {
 .form-group { display: flex; flex-direction: column; gap: 10px; }
 .form-label { font-size: 14px; font-weight: 600; color: #ccc; }
 .ai-actions { display: flex; gap: 12px; }
+
+.generation-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: -10px;
+
+  .meta-text {
+    font-size: 12px;
+    color: #9aa4af;
+  }
+}
+
 .step-actions {
   margin-top: 40px;
   display: flex;

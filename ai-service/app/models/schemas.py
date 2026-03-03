@@ -52,6 +52,11 @@ class StoryboardScript(BaseModel):
     title: str
     style: AnimeStyle
     scenes: list[StoryboardScene]
+    model_used: Optional[str] = Field(alias="modelUsed", default=None)
+    fallback_used: bool = Field(alias="fallbackUsed", default=False)
+
+    class Config:
+        populate_by_name = True
 
 
 class Resolution(BaseModel):
@@ -73,6 +78,11 @@ class GenerateScriptRequest(BaseModel):
 class GenerateScriptResponse(BaseModel):
     """剧本生成响应"""
     script: str
+    model_used: Optional[str] = Field(alias="modelUsed", default=None)
+    fallback_used: bool = Field(alias="fallbackUsed", default=False)
+
+    class Config:
+        populate_by_name = True
 
 
 class GenerateStoryboardRequest(BaseModel):
@@ -84,11 +94,41 @@ class GenerateStoryboardRequest(BaseModel):
         populate_by_name = True
 
 
+class ExtractAssetsRequest(BaseModel):
+    script: str
+    scene_agent: str = Field(alias="sceneAgent", default="scene-writer-v3")
+    role_agent: str = Field(alias="roleAgent", default="role-writer-v3")
+    prop_agent: str = Field(alias="propAgent", default="prop-writer-v3")
+
+    class Config:
+        populate_by_name = True
+
+
+class ExtractedAssetItem(BaseModel):
+    name: str
+    description: str = ""
+    confidence: float = 0.85
+    evidence: Optional[str] = None
+
+
+class ExtractAssetsResponse(BaseModel):
+    scenes: list[ExtractedAssetItem] = []
+    roles: list[ExtractedAssetItem] = []
+    props: list[ExtractedAssetItem] = []
+    model_used: Optional[str] = Field(alias="modelUsed", default=None)
+    fallback_used: bool = Field(alias="fallbackUsed", default=False)
+
+    class Config:
+        populate_by_name = True
+
+
 class GenerateImageRequest(BaseModel):
     description: str
     style: AnimeStyle = AnimeStyle.JAPANESE
     resolution: Resolution = Resolution()
     reference_images: list[str] = Field(alias="referenceImages", default=[])
+    negative_prompt: Optional[str] = Field(alias="negativePrompt", default=None)
+    custom_prompt: Optional[str] = Field(alias="customPrompt", default=None)  # 自定义提示词（可覆盖翻译结果）
 
     class Config:
         populate_by_name = True
@@ -130,6 +170,10 @@ class VideoStatusRequest(BaseModel):
 class GenerateImageResponse(BaseModel):
     image_url: str = Field(alias="imageUrl")
     thumbnail_url: str = Field(alias="thumbnailUrl")
+    prompt_used: str = Field(alias="promptUsed")  # 实际使用的完整提示词
+    translated_prompt: Optional[str] = Field(alias="translatedPrompt", default=None)  # 翻译后的提示词（不含风格前缀）
+    negative_prompt_used: Optional[str] = Field(alias="negativePromptUsed", default=None)  # 实际使用的负面提示词
+    model_used: Optional[str] = Field(alias="modelUsed", default=None)  # 本次实际使用的图片模型
 
     class Config:
         populate_by_name = True
@@ -151,6 +195,32 @@ class VideoStatusResponse(BaseModel):
     status: str  # queued / processing / completed / failed
     progress: int = Field(default=0, ge=0, le=100)
     video_url: Optional[str] = Field(alias="videoUrl", default=None)
+
+    class Config:
+        populate_by_name = True
+
+
+class SynthesizeSceneClip(BaseModel):
+    order: int
+    video_url: str = Field(alias="videoUrl")
+    duration: Optional[float] = None
+
+    class Config:
+        populate_by_name = True
+
+
+class SynthesizeVideoRequest(BaseModel):
+    project_id: Optional[str] = Field(alias="projectId", default=None)
+    scenes: list[SynthesizeSceneClip]
+
+    class Config:
+        populate_by_name = True
+
+
+class SynthesizeVideoResponse(BaseModel):
+    video_url: str = Field(alias="videoUrl")
+    skipped_clips: list[str] = Field(alias="skippedClips", default=[])
+    warning: Optional[str] = None
 
     class Config:
         populate_by_name = True

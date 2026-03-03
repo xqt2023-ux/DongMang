@@ -1,0 +1,15 @@
+# Dependencies
+**/node_modules/
+
+# Python cache
+**/__pycache__/
+*.py[cod]
+
+# Local runtime/generated artifacts
+ai-service/generated/
+backend/data/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/

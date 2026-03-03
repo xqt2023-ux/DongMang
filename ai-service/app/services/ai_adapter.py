@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any
 import os
 import json
 import asyncio
+import math
 from app.models.schemas import AnimeStyle
 
 
@@ -19,9 +20,54 @@ class AIAdapter(ABC):
         ...
 
     @abstractmethod
-    async def generate_image(self, prompt: str, size: str = "1024x1792") -> str:
+    async def generate_image(
+        self,
+        prompt: str,
+        size: str = "1024x1792",
+        reference_images: Optional[list[str]] = None,
+    ) -> str:
         """生成图片，返回图片URL"""
         ...
+
+    async def translate_to_english(self, chinese_text: str) -> str:
+        """
+        将中文提示词翻译成英文（用于图片生成）
+        子类可选实现，默认调用 generate_text
+        """
+        if not chinese_text or not any('\u4e00' <= char <= '\u9fff' for char in chinese_text):
+            # 如果没有中文字符，直接返回
+            return chinese_text
+        
+        system_prompt = """You are an expert at translating Chinese scene descriptions into detailed English prompts for AI image generation (Stable Diffusion, DALL-E, Midjourney style).
+
+CRITICAL RULES:
+1. Translate EVERY visual detail accurately
+2. Use vivid, descriptive English with rich visual vocabulary
+3. Break down complex scenes into clear visual elements
+4. Keep artistic style terms in English (anime, cinematic, etc.)
+5. Add specific visual details: lighting, colors, composition, atmosphere
+6. Use comma-separated tags format for better AI understanding
+7. Output ONLY the English prompt, no explanations or notes
+
+EXAMPLE:
+Chinese: "夕阳下的武士决斗场景"
+English: "samurai duel at sunset, dramatic lighting, silhouettes against orange sky, dynamic action pose, traditional Japanese armor, katana swords clashing, dust particles in air, cinematic wide shot, warm color palette"
+"""
+        
+        user_prompt = f"""Translate this Chinese scene description into a detailed English prompt for image generation. Add visual details about lighting, colors, composition, and atmosphere:
+
+{chinese_text}
+
+English prompt:"""
+        
+        try:
+            translated = await self.generate_text(user_prompt, system_prompt)
+            # 清理翻译结果，去除可能的引号和多余空白
+            translated = translated.strip().strip('"\'')
+            return translated
+        except Exception as e:
+            print(f"⚠️ Translation failed: {e}, using original text")
+            return chinese_text
 
     async def generate_video(
         self, 
@@ -59,6 +105,8 @@ class OpenAIAdapter(AIAdapter):
             )
             self.model = os.getenv("OPENAI_MODEL", "gpt-4")
             self.image_model = os.getenv("OPENAI_IMAGE_MODEL", "dall-e-3")
+            self.last_text_model_used: Optional[str] = None
+            self.last_image_model_used: Optional[str] = None
         except ImportError:
             raise RuntimeError("openai package is required for OpenAI adapter")
 
@@ -74,9 +122,16 @@ class OpenAIAdapter(AIAdapter):
             temperature=0.8,
             max_tokens=2000,
         )
+        self.last_text_model_used = self.model
         return response.choices[0].message.content or ""
 
-    async def generate_image(self, prompt: str, size: str = "1024x1792") -> str:
+    async def generate_image(
+        self,
+        prompt: str,
+        size: str = "1024x1792",
+        reference_images: Optional[list[str]] = None,
+    ) -> str:
+        self.last_image_model_used = self.image_model
         response = await self.client.images.generate(
             model=self.image_model,
             prompt=prompt,
@@ -92,6 +147,7 @@ class MockAdapter(AIAdapter):
 
     async def generate_text(self, prompt: str, system_prompt: str = "") -> str:
         """返回Mock分镜脚本JSON"""
+        self.last_text_model_used = "mock-text"
         return json.dumps({
             "title": "AI生成的故事",
             "scenes": [
@@ -112,8 +168,14 @@ class MockAdapter(AIAdapter):
             ]
         }, ensure_ascii=False)
 
-    async def generate_image(self, prompt: str, size: str = "1024x1792") -> str:
+    async def generate_image(
+        self,
+        prompt: str,
+        size: str = "1024x1792",
+        reference_images: Optional[list[str]] = None,
+    ) -> str:
         """返回占位图URL"""
+        self.last_image_model_used = "mock-image"
         colors = ["6c5ce7", "fd79a8", "00cec9", "ffeaa7", "00b894"]
         import random
         color = random.choice(colors)
@@ -130,7 +192,25 @@ class BabelarkAdapter(AIAdapter):
         
         # 模型配置
         self.text_model = os.getenv("BABELARK_TEXT_MODEL", "gemini-3-flash-preview")
+        self.last_text_model_used: Optional[str] = None
+        self.fallback_text_models = [
+            model.strip()
+            for model in os.getenv(
+                "BABELARK_FALLBACK_TEXT_MODELS",
+                "gemini-2.5-flash",
+            ).split(",")
+            if model.strip() and model.strip() != self.text_model
+        ]
         self.image_model = os.getenv("BABELARK_IMAGE_MODEL", "gemini-3-pro-image-preview")
+        self.last_image_model_used: Optional[str] = None
+        self.fallback_image_models = [
+            model.strip()
+            for model in os.getenv(
+                "BABELARK_FALLBACK_IMAGE_MODELS",
+                "doubao-seedream-4-5,gemini-2.5-flash-image",
+            ).split(",")
+            if model.strip()
+        ]
         self.video_model = os.getenv("BABELARK_VIDEO_MODEL", "doubao-seedance-1-5-pro")
         self.video_model_ali = os.getenv("BABELARK_VIDEO_MODEL_ALI", "wan2.6-i2v")
         
@@ -150,32 +230,223 @@ class BabelarkAdapter(AIAdapter):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        response = await self.client.post(
-            f"{self.base_url}/v1/chat/completions",
-            json={
-                "model": self.text_model,
-                "messages": messages,
-                "temperature": 0.8,
-                "max_tokens": 2000,
-            }
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
+        candidate_models = [self.text_model, *self.fallback_text_models]
+        print(f"💬 Babelark 文本生成:")
+        print(f"  - 提示词长度: {len(prompt)} 字符")
+        print(f"  - 候选模型: {', '.join(candidate_models)}")
 
-    async def generate_image(self, prompt: str, size: str = "1024x1792") -> str:
+        last_error: Optional[Exception] = None
+        for index, candidate_model in enumerate(candidate_models):
+            try:
+                print(f"  - 尝试模型: {candidate_model}")
+                response = await self.client.post(
+                    f"{self.base_url}/v1/chat/completions",
+                    json={
+                        "model": candidate_model,
+                        "messages": messages,
+                        "temperature": 0.8,
+                        "max_tokens": 2000,
+                    }
+                )
+                response.raise_for_status()
+                data = response.json()
+                result = data["choices"][0]["message"]["content"]
+                self.last_text_model_used = candidate_model
+                print(f"✅ Babelark 文本生成成功，模型: {candidate_model}，长度: {len(result)} 字符")
+                return result
+            except Exception as e:
+                last_error = e
+                print(f"⚠️ 文本模型失败: {candidate_model} -> {str(e)}")
+                if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                    print(f"  - 响应内容: {e.response.text[:500]}")
+
+                can_retry = self._is_text_model_unavailable_error(e)
+                has_next = index < len(candidate_models) - 1
+                if can_retry and has_next:
+                    print("  - 命中模型不可用错误，切换到候补文本模型")
+                    continue
+                break
+
+        raise last_error or RuntimeError("Babelark 文本生成失败")
+
+    async def generate_image(
+        self,
+        prompt: str,
+        size: str = "1024x1792",
+        reference_images: Optional[list[str]] = None,
+    ) -> str:
         """使用 Babelark Image Generation API 生成图片"""
-        response = await self.client.post(
-            f"{self.base_url}/v1/images/generations",
-            json={
-                "model": self.image_model,
-                "prompt": prompt,
-                "size": size,
-            }
+        refs = [item for item in (reference_images or []) if item]
+        normalized_size = self._normalize_image_size(size)
+        print(f"🎨 Babelark 图片生成:")
+        print(f"  - 模型: {self.image_model}")
+        print(f"  - 尺寸: {normalized_size}")
+        print(f"  - 参考图数量: {len(refs)}")
+        print(f"  - 提示词: {prompt[:200]}...")
+
+        payload = {
+            "model": self.image_model,
+            "prompt": prompt,
+            "size": normalized_size,
+        }
+        if refs:
+            payload["reference_images"] = refs
+
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/v1/images/generations",
+                json=payload
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            self.last_image_model_used = self.image_model
+            image_url = self._extract_image_output(data)
+            print(f"✅ Babelark 图片生成成功")
+            print(f"  - URL: {image_url[:100]}...")
+            return image_url
+        except Exception as e:
+            if self._is_model_unavailable_error(e):
+                print("⚠️ 当前模型渠道不可用，尝试自动降级模型...")
+                for fallback_model in self.fallback_image_models:
+                    if fallback_model == self.image_model:
+                        continue
+
+                    fallback_payload = {
+                        "model": fallback_model,
+                        "prompt": prompt,
+                        "size": self._normalize_image_size_for_model(normalized_size, fallback_model),
+                    }
+                    if refs:
+                        fallback_payload["reference_images"] = refs
+
+                    try:
+                        print(f"  - 降级尝试模型: {fallback_model}")
+                        fallback_response = await self.client.post(
+                            f"{self.base_url}/v1/images/generations",
+                            json=fallback_payload,
+                        )
+                        fallback_response.raise_for_status()
+                        fallback_data = fallback_response.json()
+                        self.last_image_model_used = fallback_model
+                        fallback_image_url = self._extract_image_output(fallback_data)
+                        print(f"✅ 图片生成成功（降级模型 {fallback_model}）")
+                        print(f"  - URL: {fallback_image_url[:100]}...")
+                        return fallback_image_url
+                    except Exception as fallback_error:
+                        print(f"⚠️ 降级模型失败: {fallback_model} -> {fallback_error}")
+
+            if refs and hasattr(e, "response") and getattr(e.response, "status_code", None) in (400, 422):
+                print("⚠️ 参考图参数可能不被当前模型支持，尝试降级为提示词参考后重试")
+                retry_prompt = (
+                    f"{prompt}\n"
+                    f"Character consistency references: {', '.join(refs[:3])}. "
+                    "Keep identity, costume and color scheme highly consistent with references."
+                )
+                retry_response = await self.client.post(
+                    f"{self.base_url}/v1/images/generations",
+                    json={
+                        "model": self.image_model,
+                        "prompt": retry_prompt,
+                        "size": normalized_size,
+                    }
+                )
+                retry_response.raise_for_status()
+                retry_data = retry_response.json()
+                retry_image_url = self._extract_image_output(retry_data)
+                print("✅ 图片生成成功（降级重试）")
+                print(f"  - URL: {retry_image_url[:100]}...")
+                return retry_image_url
+
+            print(f"❌ Babelark 图片生成失败: {str(e)}")
+            if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                print(f"  - 响应内容: {e.response.text[:500]}")
+            raise
+
+    def _extract_image_output(self, data: Dict[str, Any]) -> str:
+        """兼容 URL 与 base64 两种图片输出格式。"""
+        items = data.get("data") or []
+        if not items:
+            raise ValueError("图片生成返回为空：缺少 data 字段")
+
+        first = items[0] or {}
+
+        image_url = first.get("url")
+        if image_url:
+            return image_url
+
+        b64 = first.get("b64_json") or first.get("base64") or first.get("image_base64")
+        if b64:
+            mime_type = first.get("mime_type") or "image/png"
+            return f"data:{mime_type};base64,{b64}"
+
+        data_uri = first.get("image")
+        if isinstance(data_uri, str) and data_uri.startswith("data:image"):
+            return data_uri
+
+        raise ValueError(f"无法解析图片输出，返回字段: {list(first.keys())}")
+
+    def _normalize_image_size(self, size: str) -> str:
+        """根据模型要求调整尺寸，避免因最小像素限制导致请求失败。"""
+        return self._normalize_image_size_for_model(size, self.image_model)
+
+    def _normalize_image_size_for_model(self, size: str, model_name: str) -> str:
+        """根据指定模型要求调整尺寸。"""
+        try:
+            width_text, height_text = size.lower().split("x", 1)
+            width = int(width_text)
+            height = int(height_text)
+        except Exception:
+            return size
+
+        # doubao-seedream-4-5 要求最小 3,686,400 像素
+        if model_name.startswith("doubao-seedream-4-5"):
+            min_pixels = 3686400
+            area = width * height
+            if area < min_pixels:
+                scale = math.sqrt(min_pixels / area)
+                width = max(64, int(round((width * scale) / 64.0) * 64))
+                height = max(64, int(round((height * scale) / 64.0) * 64))
+
+                while width * height < min_pixels:
+                    if width <= height:
+                        width += 64
+                    else:
+                        height += 64
+
+                resized = f"{width}x{height}"
+                print(f"⚙️ 图片尺寸已按模型约束放大: {size} -> {resized}")
+                return resized
+
+        return size
+
+    def _is_model_unavailable_error(self, error: Exception) -> bool:
+        """判断是否是模型渠道不可用错误。"""
+        response = getattr(error, "response", None)
+        status = getattr(response, "status_code", None)
+        text = ""
+        if response is not None:
+            text = getattr(response, "text", "") or ""
+
+        if status == 503 and ("model_not_found" in text or "no available channel" in text):
+            return True
+        return False
+
+    def _is_text_model_unavailable_error(self, error: Exception) -> bool:
+        """判断是否是文本模型不可用错误，可触发候补模型重试。"""
+        response = getattr(error, "response", None)
+        status = getattr(response, "status_code", None)
+        text = ""
+        if response is not None:
+            text = ((getattr(response, "text", "") or "") + " " + str(getattr(error, "args", ""))).lower()
+
+        return (
+            "no available channel" in text
+            or "model_not_found" in text
+            or "倍率或价格未配置" in text
+            or "ratio or price not set" in text
+            or (status in (500, 502, 503, 504) and "/v1/chat/completions" in text)
         )
-        response.raise_for_status()
-        data = response.json()
-        return data["data"][0]["url"]
 
     async def generate_video(
         self, 

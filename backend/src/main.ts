@@ -28,8 +28,9 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 
-  await app.listen(4000);
-  console.log('🚀 动漫工坊后端服务启动: http://localhost:4000');
-  console.log('📖 API文档: http://localhost:4000/api/docs');
+  const port = Number(process.env.PORT) || 4000;
+  await app.listen(port);
+  console.log(`🚀 动漫工坊后端服务启动: http://localhost:${port}`);
+  console.log(`📖 API文档: http://localhost:${port}/api/docs`);
 }
 bootstrap();

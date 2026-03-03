@@ -24,7 +24,7 @@
           @click="openWorkDetail(work)"
         >
           <div class="work-cover">
-            <img :src="work.coverUrl" :alt="work.title" />
+            <img :src="getWorkCover(work)" :alt="work.title" />
             <div class="play-overlay">
               <span class="play-icon">▶</span>
             </div>
@@ -63,6 +63,7 @@ import type { PublishedWork } from '@/types'
 const router = useRouter()
 const showDetail = ref(false)
 const selectedWork = ref<PublishedWork | null>(null)
+const defaultWorkCover = 'https://picsum.photos/seed/default-cover/400/300'
 
 function startCreate() {
   const newId = Date.now().toString(36)
@@ -72,6 +73,12 @@ function startCreate() {
 function openWorkDetail(work: PublishedWork) {
   selectedWork.value = work
   showDetail.value = true
+}
+
+function getWorkCover(work: PublishedWork): string {
+  if (work.coverUrl) return work.coverUrl
+  const roleAvatar = work.roles.find(role => role.avatarUrl)?.avatarUrl
+  return roleAvatar || defaultWorkCover
 }
 
 // 示例数据
@@ -148,11 +155,11 @@ const publishedWorks = ref<PublishedWork[]>([
   border: none;
   color: white;
   padding: 14px 48px;
-  border-radius: 28px;
+  border-radius: var(--radius-pill-lg);
   font-size: 18px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all var(--motion-standard);
 
   &:hover {
     transform: translateY(-2px);
@@ -163,7 +170,7 @@ const publishedWorks = ref<PublishedWork[]>([
 .hero-showcase {
   width: 100%;
   max-width: 800px;
-  border-radius: 16px;
+  border-radius: var(--radius-2xl);
   overflow: hidden;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
 }
@@ -195,11 +202,11 @@ const publishedWorks = ref<PublishedWork[]>([
 
 .work-card {
   background: #1a1a1a;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   cursor: pointer;
   border: 1px solid rgba(255, 255, 255, 0.04);
-  transition: all 0.3s ease;
+  transition: all var(--motion-standard);
 
   &:hover {
     transform: translateY(-4px);
@@ -230,7 +237,7 @@ const publishedWorks = ref<PublishedWork[]>([
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity var(--motion-standard);
 }
 
 .play-icon {

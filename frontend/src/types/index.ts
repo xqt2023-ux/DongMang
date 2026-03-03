@@ -136,6 +136,15 @@ export interface Role {
   description: string            // 角色描述
   avatarUrl: string              // 角色头像/立绘
   voiceId?: string               // 关联语音角色
+  roleForms?: RoleForm[]         // 角色形态列表
+}
+
+export interface RoleForm {
+  id: string
+  name: string
+  description: string
+  threeViewUrl: string
+  fullBodyUrl: string
 }
 
 // ==================== 道具 ====================
@@ -204,6 +213,7 @@ export interface VoiceTrack {
   roleId?: string
   text: string
   audioUrl: string
+  voiceSource?: string
   duration: number
   startTime: number            // 在视频中的起始时间
 }

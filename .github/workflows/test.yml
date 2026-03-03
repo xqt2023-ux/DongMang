@@ -1,0 +1,255 @@
+name: 🧪 Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  pr-checklist:
+    name: PR Checklist Validation
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR template fields
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = (context.payload.pull_request?.body || '').trim();
+
+            const requiredSections = [
+              '## Red (Failing Test First)',
+              '## Green (Passing After Fix)',
+              '## Refactor'
+            ];
+
+            const missingSections = requiredSections.filter(s => !body.includes(s));
+
+            const requiredChecked = [
+              '- [x] I added or updated tests for this change.',
+              '- [x] I ran affected tests locally and they passed.',
+              '- [x] I provided Red/Green/Refactor evidence above.'
+            ];
+
+            const normalized = body.replace(/\r/g, '').toLowerCase();
+            const missingChecked = requiredChecked.filter(item => !normalized.includes(item.toLowerCase()));
+
+            if (missingSections.length || missingChecked.length) {
+              core.setFailed(
+                [
+                  'PR body is missing required TDD fields.',
+                  missingSections.length ? `Missing sections: ${missingSections.join(', ')}` : '',
+                  missingChecked.length ? `Missing checked checklist items: ${missingChecked.join(', ')}` : ''
+                ].filter(Boolean).join('\n')
+              );
+            }
+
+  pr-test-diff-check:
+    name: PR Test Diff Enforcement
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce changed code has changed tests
+        uses: actions/github-script@v7
+        with:
+          script: |
+            async function listChangedFiles() {
+              const files = [];
+              let page = 1;
+              while (true) {
+                const { data } = await github.rest.pulls.listFiles({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.payload.pull_request.number,
+                  per_page: 100,
+                  page
+                });
+                if (!data.length) break;
+                files.push(...data.map(f => f.filename));
+                if (data.length < 100) break;
+                page += 1;
+              }
+              return files;
+            }
+
+            const files = await listChangedFiles();
+
+            const frontendCodeChanged = files.some(f =>
+              f.startsWith('frontend/src/') &&
+              !f.includes('/__tests__/') &&
+              !f.endsWith('.spec.ts')
+            );
+            const frontendTestChanged = files.some(f =>
+              f.startsWith('frontend/src/') &&
+              (f.includes('/__tests__/') || f.endsWith('.spec.ts'))
+            );
+
+            const backendCodeChanged = files.some(f =>
+              f.startsWith('backend/src/') &&
+              !f.endsWith('.spec.ts')
+            );
+            const backendTestChanged = files.some(f =>
+              f.startsWith('backend/src/') &&
+              f.endsWith('.spec.ts')
+            );
+
+            const aiCodeChanged = files.some(f => f.startsWith('ai-service/app/'));
+            const aiTestChanged = files.some(f =>
+              f.startsWith('ai-service/tests/') &&
+              f.endsWith('.py')
+            );
+
+            const problems = [];
+            if (frontendCodeChanged && !frontendTestChanged) {
+              problems.push('Frontend code changed under frontend/src but no frontend test file changed.');
+            }
+            if (backendCodeChanged && !backendTestChanged) {
+              problems.push('Backend code changed under backend/src but no backend .spec.ts file changed.');
+            }
+            if (aiCodeChanged && !aiTestChanged) {
+              problems.push('AI service code changed under ai-service/app but no ai-service/tests Python test changed.');
+            }
+
+            if (problems.length) {
+              core.setFailed(
+                ['PR test-diff enforcement failed:', ...problems, '', 'Changed files:', ...files].join('\n')
+              );
+            }
+
+  # =====================================================
+  # 前端测试 (Frontend Tests)
+  # =====================================================
+  frontend-tests:
+    name: Frontend Tests (Vitest)
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: ./frontend/package-lock.json
+
+      - name: 📥 Install dependencies
+        run: npm ci
+
+      - name: 📊 Generate coverage report
+        run: npm run test:coverage
+
+      - name: 📈 Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./frontend/coverage/coverage-final.json
+          flags: frontend
+          name: frontend-coverage
+
+  # =====================================================
+  # AI 服务测试 (AI Service Tests)
+  # =====================================================
+  ai-service-tests:
+    name: AI Service Tests (pytest)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./ai-service
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: ./ai-service/requirements.txt
+
+      - name: 📥 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov httpx
+
+      - name: 📊 Run tests with coverage
+        run: python -m pytest
+
+      - name: 📈 Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./ai-service/coverage.xml
+          flags: ai-service
+          name: ai-service-coverage
+
+  # =====================================================
+  # 后端测试 (Backend Tests)
+  # =====================================================
+  backend-tests:
+    name: Backend Tests (Jest)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: ./backend/package-lock.json
+
+      - name: 📥 Install dependencies
+        run: npm ci
+
+      - name: 📊 Generate coverage report
+        run: npm run test:cov
+
+      - name: 📈 Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./backend/coverage/coverage-final.json
+          flags: backend
+          name: backend-coverage
+
+  # =====================================================
+  # 测试总结 (Test Summary)
+  # =====================================================
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [pr-checklist, pr-test-diff-check, frontend-tests, ai-service-tests, backend-tests]
+    if: always()
+
+    steps:
+      - name: 📊 Check test results
+        run: |
+          echo "## 测试结果汇总" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 前端测试: ${{ needs.frontend-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ AI 服务测试: ${{ needs.ai-service-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 后端测试: ${{ needs.backend-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.frontend-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.ai-service-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.backend-tests.result }}" == "failure" ]]; then
+            echo "❌ 部分测试失败，请检查日志" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "✅ 所有测试通过！" >> $GITHUB_STEP_SUMMARY
+          fi

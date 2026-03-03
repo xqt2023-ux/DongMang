@@ -125,7 +125,7 @@ function formatDate(dateStr: string) {
   height: 36px;
   border-radius: 50%;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background var(--motion-standard);
 
   &:hover {
     background: rgba(255, 255, 255, 0.2);
@@ -244,7 +244,7 @@ function formatDate(dateStr: string) {
   cursor: pointer;
   background: linear-gradient(135deg, #4CAF50, #81C784);
   color: white;
-  transition: all 0.3s ease;
+  transition: all var(--motion-standard);
 
   &:hover {
     transform: translateY(-1px);
@@ -255,7 +255,7 @@ function formatDate(dateStr: string) {
 // 动画
 .modal-fade-enter-active,
 .modal-fade-leave-active {
-  transition: opacity 0.3s ease;
+  transition: opacity var(--motion-standard);
 }
 .modal-fade-enter-from,
 .modal-fade-leave-to {

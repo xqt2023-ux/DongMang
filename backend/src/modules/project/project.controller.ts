@@ -20,6 +20,7 @@ import {
   AddPropDto,
   AddBackgroundDto,
   AddVoiceTrackDto,
+  SaveProjectDto,
 } from './project.dto';
 
 @ApiTags('项目管理')
@@ -49,6 +50,12 @@ export class ProjectController {
   @ApiOperation({ summary: '更新项目' })
   update(@Param('id') id: string, @Body() dto: UpdateProjectDto) {
     return this.projectService.update(id, dto);
+  }
+
+  @Put(':id/full')
+  @ApiOperation({ summary: '保存项目完整状态' })
+  saveFull(@Param('id') id: string, @Body() dto: SaveProjectDto) {
+    return this.projectService.saveFull(id, dto);
   }
 
   @Delete(':id')

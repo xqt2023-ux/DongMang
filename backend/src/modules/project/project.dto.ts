@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsNumber, MinLength, IsArray, IsObject } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // ==================== 项目 CRUD ====================
@@ -40,6 +40,74 @@ export class UpdateProjectDto {
   @IsOptional()
   @IsString()
   videoUrl?: string;
+}
+
+export class SaveProjectDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  script?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  coverUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  videoUrl?: string;
+
+  @ApiPropertyOptional({ type: 'object' })
+  @IsOptional()
+  @IsObject()
+  globalSettings?: {
+    storyType?: string;
+    customStoryType?: string;
+    animeStyle?: string;
+    aspectRatio?: string;
+    tone?: string;
+  };
+
+  @ApiPropertyOptional({ type: 'array' })
+  @IsOptional()
+  @IsArray()
+  roles?: any[];
+
+  @ApiPropertyOptional({ type: 'array' })
+  @IsOptional()
+  @IsArray()
+  scenes?: any[];
+
+  @ApiPropertyOptional({ type: 'array' })
+  @IsOptional()
+  @IsArray()
+  props?: any[];
+
+  @ApiPropertyOptional({ type: 'array' })
+  @IsOptional()
+  @IsArray()
+  sceneBackgrounds?: any[];
+
+  @ApiPropertyOptional({ type: 'array' })
+  @IsOptional()
+  @IsArray()
+  voiceTracks?: any[];
 }
 
 // ==================== 全局设定 ====================
@@ -217,6 +285,7 @@ export interface RoleEntity {
   description: string;
   avatarUrl: string;
   voiceId: string;
+  roleForms?: any[];
 }
 
 export interface SceneEntity {

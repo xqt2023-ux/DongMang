@@ -50,6 +50,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
         description TEXT NOT NULL DEFAULT '',
         avatar_url TEXT NOT NULL DEFAULT '',
         voice_id TEXT NOT NULL DEFAULT '',
+        role_forms_json TEXT NOT NULL DEFAULT '',
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
       );
 
@@ -109,6 +110,21 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
         start_time REAL NOT NULL DEFAULT 0,
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS assets (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        data BLOB NOT NULL,
+        created_at TEXT NOT NULL
+      );
     `);
+
+    const roleColumns = this.db.prepare('PRAGMA table_info(roles)').all() as any[];
+    const hasRoleFormsJson = roleColumns.some((column) => column.name === 'role_forms_json');
+    if (!hasRoleFormsJson) {
+      this.db.exec("ALTER TABLE roles ADD COLUMN role_forms_json TEXT NOT NULL DEFAULT '';");
+    }
   }
 }

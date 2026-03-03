@@ -68,7 +68,7 @@ function goToStep(stepKey: string) {
   padding: 10px 8px;
   cursor: pointer;
   position: relative;
-  transition: all 0.2s ease;
+  transition: all var(--motion-standard);
 
   &:hover {
     .step-label {
@@ -120,7 +120,7 @@ function goToStep(stepKey: string) {
   width: 100%;
   height: 100%;
   background: rgba(255, 255, 255, 0.1);
-  transition: background 0.3s ease;
+  transition: background var(--motion-standard);
 }
 
 .step-indicator {
@@ -133,20 +133,20 @@ function goToStep(stepKey: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s ease;
+  transition: all var(--motion-standard);
 }
 
 .step-number {
   font-size: 12px;
   font-weight: 700;
   color: #666666;
-  transition: color 0.3s ease;
+  transition: color var(--motion-standard);
 }
 
 .step-label {
   font-size: 13px;
   color: #666666;
   white-space: nowrap;
-  transition: all 0.2s ease;
+  transition: all var(--motion-standard);
 }
 </style>

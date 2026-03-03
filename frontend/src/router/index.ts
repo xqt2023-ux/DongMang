@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import { useProjectStore } from '@/stores/project'
 
 const routes: RouteRecordRaw[] = [
   // ==================== 首页 & 公共页 ====================
@@ -87,8 +88,48 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, from, next) => {
   document.title = `${to.meta.title || '动漫工坊'} - AI漫剧创作平台`
+  
+  const projectStore = useProjectStore()
+  
+  // 如果从编辑器页面离开（切换步骤或离开编辑器），自动保存当前项目
+  const isLeavingEditor = from.matched.some(record => record.name === 'Editor') &&
+                          from.params.id &&
+                          projectStore.currentProject
+  
+  if (isLeavingEditor) {
+    try {
+      console.log('🔄 切换步骤，自动保存项目...')
+      await projectStore.saveCurrentProject()
+      console.log('✅ 项目已自动保存')
+    } catch (error) {
+      console.error('❌ 自动保存失败:', error)
+      // 保存失败不阻止导航，但给用户提示
+      // ElMessage 需要在这里异步导入
+      import('element-plus').then(({ ElMessage }) => {
+        ElMessage.warning('项目保存失败，请手动保存')
+      })
+    }
+  }
+  
+  // 如果进入编辑器页面，加载项目数据
+  if (to.name === 'Editor' || to.matched.some(record => record.name === 'Editor')) {
+    const projectId = to.params.id as string
+    if (projectId) {
+      try {
+        // 从后端加载项目
+        await projectStore.loadProject(projectId)
+        console.log('✅ 项目已加载:', projectId)
+      } catch (error) {
+        console.error('加载项目失败:', error)
+        // 如果项目不存在，跳转到我的作品页
+        next({ name: 'MyWorks' })
+        return
+      }
+    }
+  }
+  
   next()
 })
 

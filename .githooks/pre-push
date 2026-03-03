@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+cd "$ROOT_DIR"
+
+echo "[pre-push] Running scoped test checks..."
+
+UPSTREAM_REF=""
+if git rev-parse --abbrev-ref --symbolic-full-name "@{u}" >/dev/null 2>&1; then
+  UPSTREAM_REF="$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}")"
+fi
+
+if [[ -n "$UPSTREAM_REF" ]]; then
+  CHANGED_FILES="$(git diff --name-only "$UPSTREAM_REF"...HEAD)"
+else
+  CHANGED_FILES="$(git diff --name-only HEAD~1...HEAD || true)"
+fi
+
+if [[ -z "$CHANGED_FILES" ]]; then
+  echo "[pre-push] No changed files detected."
+  exit 0
+fi
+
+frontend_changed=false
+backend_changed=false
+aiservice_changed=false
+
+while IFS= read -r file; do
+  [[ -z "$file" ]] && continue
+  if [[ "$file" == frontend/* ]]; then frontend_changed=true; fi
+  if [[ "$file" == backend/* ]]; then backend_changed=true; fi
+  if [[ "$file" == ai-service/* ]]; then aiservice_changed=true; fi
+done <<< "$CHANGED_FILES"
+
+if [[ "$frontend_changed" == true ]]; then
+  echo "[pre-push] Frontend changed -> run related Vitest checks"
+  (cd frontend && npm run test -- --changed)
+fi
+
+if [[ "$backend_changed" == true ]]; then
+  echo "[pre-push] Backend changed -> run Jest related tests"
+  BACKEND_FILES="$(echo "$CHANGED_FILES" | grep '^backend/src/.*\.(ts|js)$' || true)"
+  if [[ -n "$BACKEND_FILES" ]]; then
+    (cd backend && npm run test -- --findRelatedTests $(echo "$BACKEND_FILES" | tr '
+' ' '))
+  else
+    (cd backend && npm run test)
+  fi
+fi
+
+if [[ "$aiservice_changed" == true ]]; then
+  echo "[pre-push] AI service changed -> run pytest"
+  (cd ai-service && python -m pytest -q)
+fi
+
+echo "[pre-push] All scoped checks passed."

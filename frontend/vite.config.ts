@@ -17,12 +17,20 @@ export default defineConfig({
     globals: true,
     environment: 'happy-dom',
     include: ['src/**/*.spec.ts'],
+    coverage: {
+      thresholds: {
+        lines: 10,
+        functions: 10,
+        branches: 10,
+        statements: 10,
+      },
+    },
   },
   server: {
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: 'http://localhost:3001',
         changeOrigin: true,
       },
       '/ai': {

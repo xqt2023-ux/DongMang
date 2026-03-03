@@ -72,9 +72,9 @@
   font-size: 14px;
   font-weight: 500;
   padding: 8px 18px;
-  border-radius: 20px;
+  border-radius: var(--radius-pill);
   border: 1px solid transparent;
-  transition: all 0.2s ease;
+  transition: all var(--motion-standard);
 
   .tab-icon {
     font-size: 14px;
