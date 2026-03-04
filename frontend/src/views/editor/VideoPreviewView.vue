@@ -228,7 +228,6 @@ const aiServiceOnline = ref(true)
 const playbackVideoUrl = ref('')
 const videoElementKey = ref(0)
 const hasTriedDirectAiFallback = ref(false)
-const autoSynthesizeTried = ref(false)
 const lastSynthesizeError = ref('')
 let healthTimer: ReturnType<typeof setInterval> | null = null
 
@@ -245,11 +244,6 @@ const synthesizeCandidates = computed(() =>
 onMounted(() => {
   syncSelectedSceneIds(true)
   void refreshPlaybackUrl(currentVideoUrl.value)
-  if (!currentVideoUrl.value && synthesizeCandidates.value.length > 0 && !autoSynthesizeTried.value) {
-    autoSynthesizeTried.value = true
-    ElMessage.info('检测到已有分镜视频，正在自动合成成片...')
-    void synthesizeFinalVideo()
-  }
   void checkAiServiceHealth(false)
   healthTimer = setInterval(() => {
     void checkAiServiceHealth(true)
@@ -638,10 +632,9 @@ async function synthesizeFinalVideo(): Promise<string | null> {
     }
 
     const persistentVideoUrl = await persistFinalVideoUrl(result.videoUrl, project.id)
-    project.videoUrl = persistentVideoUrl
-    await projectStore.saveCurrentProject()
-    await refreshPlaybackUrl(project.videoUrl)
-    const finalPlayableUrl = playbackVideoUrl.value || project.videoUrl
+    await projectStore.setFinalVideo(persistentVideoUrl)
+    await refreshPlaybackUrl(projectStore.currentProject?.videoUrl || persistentVideoUrl)
+    const finalPlayableUrl = playbackVideoUrl.value || projectStore.currentProject?.videoUrl || persistentVideoUrl
 
     if (videoPlayer.value) {
       videoPlayer.value.load()
