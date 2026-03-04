@@ -62,6 +62,9 @@
       <!-- 视频播放器 -->
       <div class="video-player-container">
         <div class="video-wrapper">
+          <div v-if="showNoFinalVideoTip" class="no-final-video-tip">
+            尚未生成成片，请点击右上角“根据已有内容生成”
+          </div>
           <video
             :key="videoElementKey"
             ref="videoPlayer"
@@ -239,6 +242,9 @@ const synthesizeCandidates = computed(() =>
   scenes.value
     .filter(scene => !!scene.videoUrl)
     .sort((a, b) => a.order - b.order),
+)
+const showNoFinalVideoTip = computed(() =>
+  !currentVideoUrl.value && !isSynthesizing.value && synthesizeCandidates.value.length > 0,
 )
 
 onMounted(() => {
@@ -906,6 +912,20 @@ async function synthesizeFinalVideo(): Promise<string | null> {
   height: 100%;
   background: #000;
   border-radius: 8px;
+}
+
+.no-final-video-tip {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 181, 84, 0.5);
+  background: rgba(255, 181, 84, 0.18);
+  color: #ffd79c;
+  font-size: 12px;
 }
 
 .video-controls {
