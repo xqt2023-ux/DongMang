@@ -198,6 +198,7 @@ async def synthesize_video(request: SynthesizeVideoRequest):
             "-i", str(concat_list),
             "-vf", "fps=24,format=yuv420p",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-maxrate", "1800k", "-bufsize", "3600k",
             "-movflags", "+faststart",
             "-c:a", "aac", "-b:a", "128k",
             "-ar", "44100",
