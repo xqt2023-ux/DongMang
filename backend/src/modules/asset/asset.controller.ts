@@ -5,6 +5,7 @@ import {
   Delete,
   Param,
   Query,
+  Req,
   Res,
   UseInterceptors,
   UploadedFile,
@@ -13,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AssetService } from './asset.service';
 import { ImportAssetFromUrlDto } from './asset.dto';
 
@@ -59,12 +60,39 @@ export class AssetController {
   getContent(
     @Param('id') id: string,
     @Query('download') download: string | undefined,
+    @Req() req: Request,
     @Res() res: Response,
   ) {
     const asset = this.assetService.getContent(id);
+    const total = asset.data.length;
+    const range = req.headers.range;
+
     res.setHeader('Content-Type', asset.mimeType);
     const disposition = download ? 'attachment' : 'inline';
     res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(asset.name)}"`);
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    if (typeof range === 'string' && range.startsWith('bytes=')) {
+      const [rawStart, rawEnd] = range.replace('bytes=', '').split('-');
+      const start = Number.parseInt(rawStart, 10);
+      const end = rawEnd ? Number.parseInt(rawEnd, 10) : total - 1;
+
+      if (Number.isNaN(start) || Number.isNaN(end) || start < 0 || end < start || end >= total) {
+        res.status(416);
+        res.setHeader('Content-Range', `bytes */${total}`);
+        res.end();
+        return;
+      }
+
+      const chunk = asset.data.subarray(start, end + 1);
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+      res.setHeader('Content-Length', String(chunk.length));
+      res.send(chunk);
+      return;
+    }
+
+    res.setHeader('Content-Length', String(total));
     res.send(asset.data);
   }
 
