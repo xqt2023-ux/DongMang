@@ -411,7 +411,7 @@ function inferVideoExt(url: string): 'mp4' | 'webm' | 'mov' {
 function toPersistableVideoSource(rawUrl: string): string {
   if (!rawUrl) return ''
   if (/^https?:\/\//i.test(rawUrl)) return rawUrl
-  if (rawUrl.startsWith('/ai/')) return `http://localhost:8000${rawUrl}`
+  if (rawUrl.startsWith('/ai/')) return normalizeVideoUrl(rawUrl)
   return normalizeVideoUrl(rawUrl)
 }
 

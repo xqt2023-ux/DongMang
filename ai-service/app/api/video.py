@@ -189,7 +189,7 @@ async def synthesize_video(request: SynthesizeVideoRequest):
             raise HTTPException(status_code=400, detail="可用分镜视频为 0，无法合成（选中的分镜视频链接可能均已失效）")
 
         concat_list = tmp_path / "concat.txt"
-        concat_lines = "\n".join([f"file '{str(path).replace('\\', '/')}'" for path in local_clips])
+        concat_lines = "\n".join(["file '" + str(path).replace("\\", "/") + "'" for path in local_clips])
         concat_list.write_text(concat_lines, encoding="utf-8")
 
         cmd_transcode = [
