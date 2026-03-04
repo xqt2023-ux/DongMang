@@ -51,7 +51,14 @@
     <div class="scenes-list">
       <div class="scene-card" v-for="(scene, index) in scenes" :key="scene.id">
         <div class="scene-header">
-          <span class="scene-number">分镜 {{ index + 1 }}</span>
+          <div class="scene-header-meta">
+            <span class="scene-number">分镜 {{ index + 1 }}</span>
+            <div class="scene-ref-badges">
+              <el-tag size="small" type="success">角色参考 {{ getSceneReferenceStats(scene).role }}</el-tag>
+              <el-tag size="small" type="info">总参考 {{ getSceneReferenceStats(scene).total }}</el-tag>
+              <el-tag v-if="getSceneReferenceStats(scene).role === 0" size="small" type="warning">弱关联</el-tag>
+            </div>
+          </div>
           <div class="scene-header-actions">
             <button
               class="btn-ghost btn-sm"
@@ -410,6 +417,14 @@ function collectSceneReferenceBundle(scene: Scene): {
     backgroundImages,
     propImages,
     all: all.slice(0, 6),
+  }
+}
+
+function getSceneReferenceStats(scene: Scene): { role: number; total: number } {
+  const bundle = collectSceneReferenceBundle(scene)
+  return {
+    role: bundle.roleImages.length,
+    total: bundle.all.length,
   }
 }
 
@@ -783,6 +798,18 @@ function saveAndNext() {
   justify-content: space-between;
   padding: 12px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.scene-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scene-ref-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .scene-header-actions {
