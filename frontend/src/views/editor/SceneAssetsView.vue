@@ -1001,6 +1001,37 @@ function removeProp(id: string) {
   props.value = props.value.filter(p => p.id !== id)
 }
 
+function normalizeAssetImportSource(rawUrl: string): string {
+  if (!rawUrl) return ''
+  if (/^https?:\/\//i.test(rawUrl)) return rawUrl
+  if (rawUrl.startsWith('//')) return `${window.location.protocol}${rawUrl}`
+  return new URL(rawUrl, window.location.origin).toString()
+}
+
+function roleAssetFilename(roleName: string, suffix: string): string {
+  const safeRoleName = (roleName || 'role')
+    .trim()
+    .replace(/[\\/:*?"<>|\s]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'role'
+  return `${safeRoleName}-${suffix}-${Date.now()}.png`
+}
+
+async function persistRoleImageToAsset(rawUrl: string, roleName: string, suffix: string): Promise<string> {
+  if (!rawUrl || rawUrl.startsWith('/api/assets/')) return rawUrl
+
+  const sourceUrl = normalizeAssetImportSource(rawUrl)
+  const filename = roleAssetFilename(roleName, suffix)
+  try {
+    const asset = await assetService.importAssetFromUrl(sourceUrl, filename)
+    return asset.contentUrl
+  } catch (error) {
+    console.warn('角色图自动入库失败，将暂时使用原始链接:', error)
+    ElMessage.warning('角色图已生成，但自动入库失败，当前暂时使用原始链接')
+    return rawUrl
+  }
+}
+
 async function generateRoleAvatar(roleId: string) {
   const role = roles.value.find(r => r.id === roleId)
   if (!role) return
@@ -1015,7 +1046,7 @@ async function generateRoleAvatar(roleId: string) {
   
   try {
     const response = await aiService.generateRoleImage(role, 'japanese')
-    const imageUrl = response.imageUrl
+    const imageUrl = await persistRoleImageToAsset(response.imageUrl, role.name || 'role', 'avatar')
     role.avatarUrl = imageUrl
     const forms = getRoleForms(role)
     if (forms[0]) {
@@ -1662,7 +1693,11 @@ async function regenerateEditingForm() {
       },
       'japanese',
     )
-    const imageUrl = response.imageUrl
+    const imageUrl = await persistRoleImageToAsset(
+      response.imageUrl,
+      roleName,
+      editingForm.target === 'three' ? 'three-view' : 'full-body',
+    )
     if (editingForm.target === 'three') {
       editingForm.threeViewUrl = imageUrl
     } else {
@@ -1802,7 +1837,11 @@ async function onRolePreviewClick(event: MouseEvent) {
       },
       'japanese',
     )
-    const imageUrl = response.imageUrl
+    const imageUrl = await persistRoleImageToAsset(
+      response.imageUrl,
+      roleName,
+      editingForm.target === 'three' ? 'three-view' : 'full-body',
+    )
     if (editingForm.target === 'three') {
       editingForm.threeViewUrl = imageUrl
     } else {
@@ -1843,7 +1882,11 @@ async function enhanceRoleImage() {
       },
       'japanese',
     )
-    const imageUrl = response.imageUrl
+    const imageUrl = await persistRoleImageToAsset(
+      response.imageUrl,
+      roleName,
+      editingForm.target === 'three' ? 'three-view' : 'full-body',
+    )
     if (editingForm.target === 'three') {
       editingForm.threeViewUrl = imageUrl
     } else {
