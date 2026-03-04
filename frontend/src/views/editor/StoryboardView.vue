@@ -305,6 +305,14 @@ function normalizeName(value?: string): string {
   return (value || '').trim().toLowerCase()
 }
 
+function normalizeReferenceUrl(url?: string): string {
+  const value = (url || '').trim()
+  if (!value) return ''
+  if (/^https?:\/\//i.test(value)) return value
+  if (value.startsWith('//')) return `${window.location.protocol}${value}`
+  return new URL(value, window.location.origin).toString()
+}
+
 function mapRoleIdsFromSceneData(sceneData: any): string[] {
   const project = projectStore.currentProject
   if (!project) return []
@@ -340,7 +348,7 @@ function collectSceneReferenceBundle(scene: Scene): {
   const backgroundImages: string[] = []
   const propImages: string[] = []
   const pushUnique = (bucket: string[], url?: string) => {
-    const normalized = (url || '').trim()
+    const normalized = normalizeReferenceUrl(url)
     if (!normalized || bucket.includes(normalized)) return
     bucket.push(normalized)
   }
