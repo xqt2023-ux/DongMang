@@ -22,7 +22,7 @@
       <main class="library-panel">
         <div class="library-header">
           <div>
-            <h1>道具库</h1>
+            <h1>{{ currentFolderLabel || '素材库' }}</h1>
             <p class="library-path">个人资产库 > 素材库 > {{ currentFolderLabel }}</p>
           </div>
           <button class="btn-new-folder" @click="createFolder">+ 新建文件夹</button>
@@ -31,7 +31,7 @@
         <div class="assets-grid">
           <button class="upload-tile" @click="triggerUpload">
             <span class="plus">＋</span>
-            <span>上传道具图</span>
+            <span>{{ uploadButtonText }}</span>
           </button>
 
           <div class="asset-card" v-for="asset in filteredAssets" :key="asset.id">
@@ -111,6 +111,16 @@ const folders: Array<{ key: FolderKey; label: string }> = [
 
 const currentFolderLabel = computed(() => {
   return folders.find(t => t.key === activeFolder.value)?.label || ''
+})
+
+const uploadButtonText = computed(() => {
+  if (activeFolder.value === 'roles') return '上传角色图'
+  if (activeFolder.value === 'scenes') return '上传场景图'
+  if (activeFolder.value === 'props') return '上传道具图'
+  if (activeFolder.value === 'audio') return '上传音频'
+  if (activeFolder.value === 'video') return '上传视频'
+  if (activeFolder.value === 'files') return '上传文件'
+  return '上传素材'
 })
 
 const assets = ref<LocalAsset[]>([])
@@ -204,7 +214,7 @@ function belongsToFolder(asset: LocalAsset, folder: FolderKey) {
 function getImageCategory(name: string, mimeType: string): ImageCategory {
   if (!mimeType.startsWith('image/')) return 'unknown'
   const lowerName = name.toLowerCase()
-  if (/(角色|avatar|role|人物|人设|形象)/i.test(lowerName)) return 'role'
+  if (/(角色|avatar|role|人物|人设|形象|three-view|full-body|三视图|全身|形态)/i.test(lowerName)) return 'role'
   if (/(场景|背景|bg|scene|background)/i.test(lowerName)) return 'scene'
   if (/(道具|prop|item|weapon|tool)/i.test(lowerName)) return 'prop'
   return 'unknown'
