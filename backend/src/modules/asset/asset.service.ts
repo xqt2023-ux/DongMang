@@ -7,6 +7,8 @@ import { AssetContent, AssetMetadataDto } from './asset.dto';
 export class AssetService {
   constructor(private readonly database: DatabaseService) {}
   private static readonly MAX_REMOTE_FILE_SIZE = 100 * 1024 * 1024;
+  private static readonly REMOTE_FETCH_TIMEOUT_MS = 120_000;
+  private static readonly REMOTE_FETCH_RETRIES = 2;
 
   private get db() {
     return this.database.getDb();
@@ -29,13 +31,8 @@ export class AssetService {
       throw new BadRequestException('仅支持 http/https URL');
     }
 
-    const abortController = new AbortController();
-    const timeout = setTimeout(() => abortController.abort(), 30_000);
-
     try {
-      const response = await fetch(parsedUrl.toString(), {
-        signal: abortController.signal,
-      });
+      const response = await this.fetchRemoteWithRetry(parsedUrl.toString());
 
       if (!response.ok) {
         throw new BadRequestException(`远程文件下载失败: HTTP ${response.status}`);
@@ -60,15 +57,57 @@ export class AssetService {
       return this.createFromBuffer(safeName, mimeType, Buffer.from(arrayBuffer));
     } catch (error: any) {
       if (error?.name === 'AbortError') {
-        throw new BadRequestException('远程文件下载超时');
+        throw new BadRequestException('远程文件下载超时（可稍后重试）');
       }
       if (error instanceof BadRequestException) {
         throw error;
       }
       throw new BadRequestException('远程文件导入失败');
-    } finally {
-      clearTimeout(timeout);
     }
+  }
+
+  private async fetchRemoteWithRetry(url: string): Promise<Response> {
+    let lastError: any = null;
+
+    for (let attempt = 1; attempt <= AssetService.REMOTE_FETCH_RETRIES; attempt += 1) {
+      const abortController = new AbortController();
+      const timeout = setTimeout(() => abortController.abort(), AssetService.REMOTE_FETCH_TIMEOUT_MS);
+
+      try {
+        const response = await fetch(url, {
+          signal: abortController.signal,
+          headers: {
+            'User-Agent': 'DongMangAssetImporter/1.0',
+            'Accept': 'image/*,video/*,*/*;q=0.8',
+          },
+        });
+
+        if (!response.ok) {
+          if (response.status === 403) {
+            throw new BadRequestException('远程文件下载失败: HTTP 403（链接可能已过期）');
+          }
+          if ((response.status >= 500 || response.status === 429) && attempt < AssetService.REMOTE_FETCH_RETRIES) {
+            await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+            continue;
+          }
+          throw new BadRequestException(`远程文件下载失败: HTTP ${response.status}`);
+        }
+
+        return response;
+      } catch (error: any) {
+        lastError = error;
+        const retryable = error?.name === 'AbortError';
+        if (retryable && attempt < AssetService.REMOTE_FETCH_RETRIES) {
+          await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+          continue;
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    throw lastError || new BadRequestException('远程文件导入失败');
   }
 
   list(): AssetMetadataDto[] {
