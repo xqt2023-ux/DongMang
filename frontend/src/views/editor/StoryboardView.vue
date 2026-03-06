@@ -603,6 +603,8 @@ async function generateImage(sceneId: string) {
     scene.imageUrl = response.imageUrl
     scene.thumbnailUrl = response.thumbnailUrl
     scene.status = 'generated'
+    scene.videoUrl = ''
+    scene.videoStatus = 'pending'
     
     // 保存返回的提示词信息
     scenePrompts.value[sceneId] = {
@@ -614,7 +616,7 @@ async function generateImage(sceneId: string) {
     
     ElNotification.success({
       title: '图片生成成功',
-      message: `分镜 ${scene.order} 的图片已生成（来源：${response.modelUsed || 'unknown'}，参考图：${referenceImages.length} 张；角色${referenceBundle.roleImages.length}/背景${referenceBundle.backgroundImages.length}/道具${referenceBundle.propImages.length}）`,
+      message: `分镜 ${scene.order} 的图片已生成（来源：${response.modelUsed || 'unknown'}，参考图：${referenceImages.length} 张；角色${referenceBundle.roleImages.length}/背景${referenceBundle.backgroundImages.length}/道具${referenceBundle.propImages.length}）。旧分镜视频已失效，请在第5步重新生成视频。`,
       duration: 3000,
     })
   } catch (error: any) {
